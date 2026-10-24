@@ -21,6 +21,13 @@ static I64 g_history_count = 0;
 
 static CRingBuffer *g_dmesg_buf = NULL;
 
+static inline U0 TermWriteRaw(const char *s, I64 len) {
+    if (s && len > 0) {
+        ssize_t w = write(STDOUT_FILENO, s, (size_t)len);
+        (U0)w;
+    }
+}
+
 U0 KLog(const U8 *fmt, ...) {
     if (!g_dmesg_buf) {
         g_dmesg_buf = RingBufCreate(DMESG_BUFFER_SIZE);
@@ -49,7 +56,7 @@ U0 TermRestore() {
     if (g_raw_mode_active) {
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_orig_termios);
         /* Reset terminal color & attributes */
-        write(STDOUT_FILENO, "\033[0m\033[?25h", 9);
+        TermWriteRaw("\033[0m\033[?25h", 9);
         g_raw_mode_active = FALSE;
     }
 }
@@ -92,9 +99,9 @@ I64 TermWrite(const U8 *buf, I64 count) {
 
 U0 TermClearScreen() {
     if (g_templeos_blue_theme) {
-        write(STDOUT_FILENO, "\033[44;97m\033[2J\033[H", 16);
+        TermWriteRaw("\033[44;97m\033[2J\033[H", 16);
     } else {
-        write(STDOUT_FILENO, "\033[0m\033[2J\033[H", 11);
+        TermWriteRaw("\033[0m\033[2J\033[H", 11);
     }
 }
 
@@ -165,24 +172,24 @@ static U0 TermDoTabCompletion(U8 *line_buf, I64 *pos, I64 *len, I64 max_len) {
         for (I64 i = prefix_len; i < match_len && *len + 1 < max_len; ++i) {
             line_buf[(*pos)++] = match[i];
             (*len)++;
-            write(STDOUT_FILENO, &match[i], 1);
+            TermWriteRaw(&match[i], 1);
         }
         if (*len + 1 < max_len) {
             line_buf[(*pos)++] = ' ';
             (*len)++;
-            write(STDOUT_FILENO, " ", 1);
+            TermWriteRaw(" ", 1);
         }
         line_buf[*len] = '\0';
     } else if (match_count > 1) {
         /* Multiple matches: show options */
-        write(STDOUT_FILENO, "\n\033[96m", 6);
+        TermWriteRaw("\n\033[96m", 6);
         for (I64 i = 0; i < match_count; ++i) {
-            write(STDOUT_FILENO, matches[i], strlen(matches[i]));
-            write(STDOUT_FILENO, "  ", 2);
+            TermWriteRaw(matches[i], strlen(matches[i]));
+            TermWriteRaw("  ", 2);
         }
-        write(STDOUT_FILENO, "\033[0m\n", 5);
+        TermWriteRaw("\033[0m\n", 5);
         /* Redraw line */
-        write(STDOUT_FILENO, (const char*)line_buf, *len);
+        TermWriteRaw((const char*)line_buf, *len);
     }
 }
 
@@ -221,7 +228,7 @@ I64 TermReadLine(U8 *buf, I64 max_len, const U8 *prompt) {
         /* Enter / Return */
         if (c == '\r' || c == '\n') {
             buf[len] = '\0';
-            write(STDOUT_FILENO, "\r\n", 2);
+            TermWriteRaw("\r\n", 2);
             if (len > 0) {
                 TermAddHistory(buf);
             }
@@ -230,7 +237,7 @@ I64 TermReadLine(U8 *buf, I64 max_len, const U8 *prompt) {
 
         /* Ctrl+C: Cancel command */
         if (c == 3) {
-            write(STDOUT_FILENO, "^C\r\n", 4);
+            TermWriteRaw("^C\r\n", 4);
             buf[0] = '\0';
             return 0;
         }
@@ -238,7 +245,7 @@ I64 TermReadLine(U8 *buf, I64 max_len, const U8 *prompt) {
         /* Ctrl+D: EOF */
         if (c == 4) {
             if (len == 0) {
-                write(STDOUT_FILENO, "\r\n", 2);
+                TermWriteRaw("\r\n", 2);
                 return -1;
             }
             continue;
@@ -248,12 +255,12 @@ I64 TermReadLine(U8 *buf, I64 max_len, const U8 *prompt) {
         if (c == 12) {
             TermClearScreen();
             if (prompt) Print("%s", prompt);
-            write(STDOUT_FILENO, (const char*)buf, len);
+            TermWriteRaw((const char*)buf, len);
             /* Move cursor back to pos */
             if (len > pos) {
                 char back[32];
                 snprintf(back, sizeof(back), "\033[%lldD", (long long)(len - pos));
-                write(STDOUT_FILENO, back, strlen(back));
+                TermWriteRaw(back, strlen(back));
             }
             continue;
         }
@@ -274,12 +281,12 @@ I64 TermReadLine(U8 *buf, I64 max_len, const U8 *prompt) {
                 len--;
                 buf[len] = '\0';
 
-                write(STDOUT_FILENO, "\b\033[K", 4);
+                TermWriteRaw("\b\033[K", 4);
                 if (pos < len) {
-                    write(STDOUT_FILENO, (const char*)&buf[pos], len - pos);
+                    TermWriteRaw((const char*)&buf[pos], len - pos);
                     char back[32];
                     snprintf(back, sizeof(back), "\033[%lldD", (long long)(len - pos));
-                    write(STDOUT_FILENO, back, strlen(back));
+                    TermWriteRaw(back, strlen(back));
                 }
             }
             continue;
@@ -297,19 +304,19 @@ I64 TermReadLine(U8 *buf, I64 max_len, const U8 *prompt) {
                         if (hist_idx > 0) {
                             hist_idx--;
                             /* Clear current typed line on screen */
-                            while (pos > 0) { write(STDOUT_FILENO, "\b", 1); pos--; }
-                            write(STDOUT_FILENO, "\033[K", 3);
+                            while (pos > 0) { TermWriteRaw("\b", 1); pos--; }
+                            TermWriteRaw("\033[K", 3);
                             StrNCpy(buf, g_history[hist_idx], max_len - 1);
                             len = StrLen(buf);
                             pos = len;
-                            write(STDOUT_FILENO, (const char*)buf, len);
+                            TermWriteRaw((const char*)buf, len);
                         }
                         break;
                     case 'B': /* Down Arrow: History Next */
                         if (hist_idx < g_history_count) {
                             hist_idx++;
-                            while (pos > 0) { write(STDOUT_FILENO, "\b", 1); pos--; }
-                            write(STDOUT_FILENO, "\033[K", 3);
+                            while (pos > 0) { TermWriteRaw("\b", 1); pos--; }
+                            TermWriteRaw("\033[K", 3);
                             if (hist_idx < g_history_count) {
                                 StrNCpy(buf, g_history[hist_idx], max_len - 1);
                             } else {
@@ -317,26 +324,26 @@ I64 TermReadLine(U8 *buf, I64 max_len, const U8 *prompt) {
                             }
                             len = StrLen(buf);
                             pos = len;
-                            write(STDOUT_FILENO, (const char*)buf, len);
+                            TermWriteRaw((const char*)buf, len);
                         }
                         break;
                     case 'C': /* Right Arrow */
                         if (pos < len) {
-                            write(STDOUT_FILENO, "\033[C", 3);
+                            TermWriteRaw("\033[C", 3);
                             pos++;
                         }
                         break;
                     case 'D': /* Left Arrow */
                         if (pos > 0) {
-                            write(STDOUT_FILENO, "\033[D", 3);
+                            TermWriteRaw("\033[D", 3);
                             pos--;
                         }
                         break;
                     case 'H': /* Home */
-                        while (pos > 0) { write(STDOUT_FILENO, "\033[D", 3); pos--; }
+                        while (pos > 0) { TermWriteRaw("\033[D", 3); pos--; }
                         break;
                     case 'F': /* End */
-                        while (pos < len) { write(STDOUT_FILENO, "\033[C", 3); pos++; }
+                        while (pos < len) { TermWriteRaw("\033[C", 3); pos++; }
                         break;
                 }
             }
@@ -354,15 +361,16 @@ I64 TermReadLine(U8 *buf, I64 max_len, const U8 *prompt) {
             len++;
             buf[len] = '\0';
 
-            write(STDOUT_FILENO, &c, 1);
+            TermWriteRaw((const char*)&c, 1);
             if (pos < len) {
-                write(STDOUT_FILENO, (const char*)&buf[pos], len - pos);
+                TermWriteRaw((const char*)&buf[pos], len - pos);
                 char back[32];
                 snprintf(back, sizeof(back), "\033[%lldD", (long long)(len - pos));
-                write(STDOUT_FILENO, back, strlen(back));
+                TermWriteRaw(back, strlen(back));
             }
         }
     }
+    return len;
 }
 
 #endif /* TERMINAL_HC */

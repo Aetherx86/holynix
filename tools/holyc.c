@@ -14,6 +14,16 @@
  * - Built-in runtime inclusion and clang/gcc driver invocation.
  */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -544,7 +554,7 @@ int main(int argc, char **argv) {
     fclose(ftmp);
     free(transpiled);
 
-    char cmd[PATH_MAX * 2];
+    char cmd[PATH_MAX * 4];
     char target_out[PATH_MAX];
     if (out_path) {
         strncpy(target_out, out_path, sizeof(target_out) - 1);
@@ -562,11 +572,11 @@ int main(int argc, char **argv) {
 
     if (flag_c) {
         snprintf(cmd, sizeof(cmd),
-                 "%s -std=c11 -Wall -Wno-unused-function -Wno-pointer-sign -Wno-macro-redefined -Wno-typedef-redefinition -O2%s -c \"%s\" -o \"%s\"",
+                 "%s -std=c11 -Wall -Wno-unused-function -Wno-pointer-sign -O2%s -c \"%s\" -o \"%s\"",
                  cc, inc_dirs, tmp_c_path, target_out);
     } else {
         snprintf(cmd, sizeof(cmd),
-                 "%s -std=c11 -Wall -Wno-unused-function -Wno-pointer-sign -Wno-macro-redefined -Wno-typedef-redefinition -O2%s \"%s\" -o \"%s\"",
+                 "%s -std=c11 -Wall -Wno-unused-function -Wno-pointer-sign -O2%s \"%s\" -o \"%s\"",
                  cc, inc_dirs, tmp_c_path, target_out);
     }
 
