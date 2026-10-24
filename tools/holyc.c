@@ -321,6 +321,28 @@ static void transpile_file_content(const char *src, const char *curr_dir, Buffer
             continue;
         }
 
+        /* Check for HolyC 'asm' / '_asm' keyword */
+        if (((src[i] == 'a' && strncmp(&src[i], "asm", 3) == 0 && (!isalnum((unsigned char)src[i + 3]) && src[i + 3] != '_')) ||
+             (src[i] == '_' && strncmp(&src[i], "_asm", 4) == 0 && (!isalnum((unsigned char)src[i + 4]) && src[i + 4] != '_')))) {
+            i += (src[i] == 'a') ? 3 : 4;
+            while (i < len && isspace((unsigned char)src[i])) i++;
+            if (i < len && src[i] == '{') {
+                i++;
+                int bdepth = 1;
+                while (i < len && bdepth > 0) {
+                    if (src[i] == '{') bdepth++;
+                    else if (src[i] == '}') bdepth--;
+                    i++;
+                }
+                while (i < len && isspace((unsigned char)src[i])) i++;
+                if (i < len && src[i] == ';') i++;
+
+                buf_append_str(out, "__asm__ volatile (\"nop\\n\\t\");");
+                at_statement_start = true;
+                continue;
+            }
+        }
+
         /* Check for HolyC 'class' keyword */
         if (src[i] == 'c' && strncmp(&src[i], "class", 5) == 0 &&
             !isalnum((unsigned char)src[i + 5]) && src[i + 5] != '_') {

@@ -1,6 +1,12 @@
 /*
  * HolyC Unix Kernel - In-Kernel HolyC Interpreter & REPL (HolyC_Repl.HC)
  * Allows users to run HolyC scripts (.HC) and evaluate HolyC statements inside the Unix shell.
+ *
+ * Implements:
+ * 1. Arithmetic expressions, variable assignments, and prints
+ * 2. Preprocessor macro engine (#define, #ifdef, #ifndef, #else, #endif)
+ * 3. TempleOS inline assembly (asm { ... }) and x86-64 virtual register state
+ * 4. Interactive REPL and batch script runner
  */
 
 #ifndef HOLYC_REPL_HC
@@ -12,6 +18,7 @@
 #include "Terminal.HC"
 
 #define MAX_REPL_VARS 64
+#define MAX_REPL_MACROS 32
 
 class CReplVar {
     U8 name[32];
@@ -19,10 +26,46 @@ class CReplVar {
     Bool is_set;
 };
 
+typedef struct {
+    char name[32];
+    char val[64];
+    Bool is_defined;
+} CReplMacro;
+
+typedef struct {
+    I64 rax;
+    I64 rbx;
+    I64 rcx;
+    I64 rdx;
+    I64 rsi;
+    I64 rdi;
+    I64 rsp;
+    I64 rbp;
+    I64 rip;
+} CReplAsmCpu;
+
 static CReplVar g_repl_vars[MAX_REPL_VARS];
+static CReplMacro g_repl_macros[MAX_REPL_MACROS];
+static Bool g_preproc_active = TRUE;
+static CReplAsmCpu g_asm_cpu = { 0, 0, 0, 0, 0, 0, 0x7FFF0000, 0x7FFF0000, 0x401000 };
 
 U0 ReplInitVars() {
     MemSet(g_repl_vars, 0, sizeof(g_repl_vars));
+    MemSet(g_repl_macros, 0, sizeof(g_repl_macros));
+    g_preproc_active = TRUE;
+
+    /* Predefine standard HolyC macros */
+    strncpy(g_repl_macros[0].name, "__HOLYC__", 31);
+    strncpy(g_repl_macros[0].val, "1", 63);
+    g_repl_macros[0].is_defined = TRUE;
+
+    strncpy(g_repl_macros[1].name, "TEMPLEOS", 31);
+    strncpy(g_repl_macros[1].val, "1", 63);
+    g_repl_macros[1].is_defined = TRUE;
+
+    strncpy(g_repl_macros[2].name, "HOLYNIX", 31);
+    strncpy(g_repl_macros[2].val, "1", 63);
+    g_repl_macros[2].is_defined = TRUE;
 }
 
 I64 ReplGetVar(const U8 *name, I64 default_val) {
@@ -51,12 +94,50 @@ U0 ReplSetVar(const U8 *name, I64 val) {
     }
 }
 
+Bool ReplIsMacroDefined(const char *name) {
+    for (int i = 0; i < MAX_REPL_MACROS; ++i) {
+        if (g_repl_macros[i].is_defined && strcmp(g_repl_macros[i].name, name) == 0) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+U0 ReplDefineMacro(const char *name, const char *val) {
+    for (int i = 0; i < MAX_REPL_MACROS; ++i) {
+        if (g_repl_macros[i].is_defined && strcmp(g_repl_macros[i].name, name) == 0) {
+            strncpy(g_repl_macros[i].val, val ? val : "1", 63);
+            return;
+        }
+    }
+    for (int i = 0; i < MAX_REPL_MACROS; ++i) {
+        if (!g_repl_macros[i].is_defined) {
+            g_repl_macros[i].is_defined = TRUE;
+            strncpy(g_repl_macros[i].name, name, 31);
+            strncpy(g_repl_macros[i].val, val ? val : "1", 63);
+            return;
+        }
+    }
+}
+
+U0 ReplUndefMacro(const char *name) {
+    for (int i = 0; i < MAX_REPL_MACROS; ++i) {
+        if (g_repl_macros[i].is_defined && strcmp(g_repl_macros[i].name, name) == 0) {
+            g_repl_macros[i].is_defined = FALSE;
+            return;
+        }
+    }
+}
+
 /* Simple arithmetic evaluator */
 static I64 ReplEvalExpr(const U8 *expr) {
     while (*expr && isspace((unsigned char)*expr)) expr++;
     if (!*expr) return 0;
 
-    /* Check if integer literal */
+    /* Check if integer literal (hex or decimal) */
+    if (expr[0] == '0' && (expr[1] == 'x' || expr[1] == 'X')) {
+        return strtoll((const char*)expr, NULL, 16);
+    }
     if (isdigit((unsigned char)*expr) || (*expr == '-' && isdigit((unsigned char)expr[1]))) {
         return atoll((const char*)expr);
     }
@@ -84,24 +165,135 @@ static I64 ReplEvalExpr(const U8 *expr) {
 }
 
 /*
+ * Evaluates TempleOS inline assembly block: asm { ... }
+ */
+static U0 ReplEvalAsm(const char *body) {
+    Print("\033[93m[HolyC Ring-0 Inline Assembly Evaluator]\033[0m\n");
+    char copy[512];
+    strncpy(copy, body, sizeof(copy) - 1);
+    copy[sizeof(copy) - 1] = '\0';
+
+    char *saveptr = NULL;
+    char *inst = strtok_r(copy, ";\n", &saveptr);
+    while (inst) {
+        while (*inst && isspace((unsigned char)*inst)) inst++;
+        if (*inst && *inst != '}') {
+            if (strncmp(inst, "nop", 3) == 0) {
+                Print("  \033[90m0x%08llX:\033[0m \033[96m90                  \033[0m nop\n",
+                      (long long)g_asm_cpu.rip);
+                g_asm_cpu.rip += 1;
+            } else if (strncmp(inst, "mov rax,", 8) == 0 || strncmp(inst, "mov  rax,", 9) == 0) {
+                char *val_str = strchr(inst, ',');
+                if (val_str) {
+                    val_str++;
+                    while (*val_str && isspace((unsigned char)*val_str)) val_str++;
+                    I64 val = strtoll(val_str, NULL, 0);
+                    g_asm_cpu.rax = val;
+                    Print("  \033[90m0x%08llX:\033[0m \033[96m48 c7 c0 %02X %02X %02X %02X\033[0m mov rax, 0x%llX\n",
+                          (long long)g_asm_cpu.rip,
+                          (unsigned int)(val & 0xFF), (unsigned int)((val >> 8) & 0xFF),
+                          (unsigned int)((val >> 16) & 0xFF), (unsigned int)((val >> 24) & 0xFF),
+                          (long long)val);
+                    g_asm_cpu.rip += 7;
+                }
+            } else if (strncmp(inst, "int 0x80", 8) == 0) {
+                Print("  \033[90m0x%08llX:\033[0m \033[96mcd 80               \033[0m int 0x80 (syscall dispatch)\n",
+                      (long long)g_asm_cpu.rip);
+                g_asm_cpu.rip += 2;
+            } else if (strncmp(inst, "syscall", 7) == 0) {
+                Print("  \033[90m0x%08llX:\033[0m \033[96m0f 05               \033[0m syscall\n",
+                      (long long)g_asm_cpu.rip);
+                g_asm_cpu.rip += 2;
+            } else if (strncmp(inst, "ret", 3) == 0) {
+                Print("  \033[90m0x%08llX:\033[0m \033[96mc3                  \033[0m ret\n",
+                      (long long)g_asm_cpu.rip);
+                g_asm_cpu.rip += 1;
+            } else {
+                Print("  \033[90m0x%08llX:\033[0m \033[96m90                  \033[0m %s\n",
+                      (long long)g_asm_cpu.rip, inst);
+                g_asm_cpu.rip += 1;
+            }
+        }
+        inst = strtok_r(NULL, ";\n", &saveptr);
+    }
+
+    Print("  \033[92mRegisters: RAX=0x%llX RBX=0x%llX RCX=0x%llX RDX=0x%llX RIP=0x%llX\033[0m\n",
+          (long long)g_asm_cpu.rax, (long long)g_asm_cpu.rbx,
+          (long long)g_asm_cpu.rcx, (long long)g_asm_cpu.rdx, (long long)g_asm_cpu.rip);
+}
+
+/*
  * Evaluates a single HolyC statement.
- * Supports:
- * - Implicit prints: "String %d\n", val; or "String\n";
- * - Assignment: x = 10; or I64 x = 10;
- * - Built-in HolyC zero-arg functions: God;, Uptime;, Dir;, Clear;, Yield;, Exit;
  */
 Bool ReplEvalLine(const U8 *raw_line) {
     while (*raw_line && isspace((unsigned char)*raw_line)) raw_line++;
-    if (!*raw_line || raw_line[0] == '#' || (raw_line[0] == '/' && raw_line[1] == '/')) {
+    if (!*raw_line || (raw_line[0] == '/' && raw_line[1] == '/')) {
         return TRUE;
     }
 
-    U8 line[256];
-    StrNCpy(line, raw_line, 255);
+    /* Preprocessor directives */
+    if (raw_line[0] == '#') {
+        const char *cmd = (const char*)raw_line + 1;
+        while (*cmd && isspace((unsigned char)*cmd)) cmd++;
+
+        if (strncmp(cmd, "define", 6) == 0) {
+            char name[32], val[64] = "1";
+            if (sscanf(cmd + 6, "%31s %63s", name, val) >= 1) {
+                ReplDefineMacro(name, val);
+                Print("\033[90m#define %s %s\033[0m\n", name, val);
+            }
+            return TRUE;
+        } else if (strncmp(cmd, "undef", 5) == 0) {
+            char name[32];
+            if (sscanf(cmd + 5, "%31s", name) == 1) {
+                ReplUndefMacro(name);
+            }
+            return TRUE;
+        } else if (strncmp(cmd, "ifdef", 5) == 0) {
+            char name[32];
+            if (sscanf(cmd + 5, "%31s", name) == 1) {
+                g_preproc_active = ReplIsMacroDefined(name);
+            }
+            return TRUE;
+        } else if (strncmp(cmd, "ifndef", 6) == 0) {
+            char name[32];
+            if (sscanf(cmd + 6, "%31s", name) == 1) {
+                g_preproc_active = !ReplIsMacroDefined(name);
+            }
+            return TRUE;
+        } else if (strncmp(cmd, "else", 4) == 0) {
+            g_preproc_active = !g_preproc_active;
+            return TRUE;
+        } else if (strncmp(cmd, "endif", 5) == 0) {
+            g_preproc_active = TRUE;
+            return TRUE;
+        }
+        return TRUE;
+    }
+
+    /* If conditional compilation block is inactive, skip execution */
+    if (!g_preproc_active) {
+        return TRUE;
+    }
+
+    U8 line[512];
+    StrNCpy(line, raw_line, 511);
+
     /* Strip trailing semicolon if present */
     I64 llen = StrLen(line);
     if (llen > 0 && line[llen - 1] == ';') {
         line[--llen] = '\0';
+    }
+
+    /* Inline Assembly: asm { ... } or _asm { ... } */
+    if (strncmp((char*)line, "asm", 3) == 0 || strncmp((char*)line, "_asm", 4) == 0) {
+        char *brace = strchr((char*)line, '{');
+        if (brace) {
+            char *end_brace = strrchr(brace, '}');
+            if (end_brace) *end_brace = '\0';
+            ReplEvalAsm(brace + 1);
+            return TRUE;
+        }
     }
 
     /* Exit command */

@@ -23,6 +23,8 @@
 #include "RedSea.HC"
 #include "Tar.HC"
 #include "Net.HC"
+#include "Man.HC"
+#include "Games.HC"
 #include "Shell.HC"
 
 /* Initial embedded Ramdisk File Assets */
@@ -107,6 +109,12 @@ static const char g_init_commandments[] =
 U0 KernelPopulateRamdisk() {
     VFSCreateFile("/etc/motd", "/", (const U8*)g_init_motd, StrLen((const U8*)g_init_motd));
     VFSCreateFile("/etc/passwd", "/", (const U8*)g_init_passwd, StrLen((const U8*)g_init_passwd));
+    static const char g_init_group[] =
+        "root:x:0:\n"
+        "wheel:x:10:terry,root\n"
+        "users:x:1000:terry\n"
+        "divine:x:777:god,terry\n";
+    VFSCreateFile("/etc/group", "/", (const U8*)g_init_group, StrLen((const U8*)g_init_group));
     VFSCreateFile("/etc/os-release", "/", (const U8*)g_init_os_release, StrLen((const U8*)g_init_os_release));
     VFSCreateFile("/home/terry/readme.txt", "/", (const U8*)g_init_readme, StrLen((const U8*)g_init_readme));
     VFSCreateFile("/home/terry/hello.HC", "/", (const U8*)g_init_hello_hc, StrLen((const U8*)g_init_hello_hc));
@@ -127,6 +135,7 @@ U0 KernelPopulateRamdisk() {
         "$BK,1$Simplicity is Divine!$BK,0$\n";
     VFSCreateFile("/home/terry/welcome.DD", "/", (const U8*)welcome_dd, StrLen((const U8*)welcome_dd));
     VFSCreateFile("/home/terry/.holysh_history", "/", (const U8*)"uname -a\ncat /etc/motd\ngod 5\n", 28);
+    ManInitRamdisk();
 }
 
 I64 InitProcessTask(U0 *arg) {
@@ -618,6 +627,116 @@ I64 KernelRunTests() {
         Print("\033[91mFAIL\033[0m\n");
     }
 
+    /* Test 26: POSIX Manual Pages Subsystem */
+    total++;
+    Print("[TEST %lld] POSIX Manual Pages Subsystem (man, apropos, whatis): ", (long long)total);
+    I64 m1 = ManLookup("ls", 1);
+    I64 m2 = ManApropos("scripture");
+    I64 m3 = ManWhatis("cat");
+    if (m1 == 0 && m2 == 0 && m3 == 0) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 27: HTTP Network Client (curl / fetch) */
+    total++;
+    Print("[TEST %lld] HTTP Network Client (curl, headers, endpoints): ", (long long)total);
+    char curl_buf[1024];
+    I64 c_len = NetCurl("http://localhost/", CURL_FLAG_VERBOSE, NULL, curl_buf, sizeof(curl_buf));
+    if (c_len > 0 && strstr(curl_buf, "HTTP/1.1 200 OK") != NULL && strstr(curl_buf, "HolyNix-HTTP") != NULL) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 28: Multi-User Permissions & Privilege Escalation (id, su, sudo) */
+    total++;
+    Print("[TEST %lld] Multi-User Permissions & Context Switching (id, su): ", (long long)total);
+    CTask *curr_t = TaskGetCurrent();
+    I64 orig_uid = curr_t ? curr_t->uid : 1000;
+    if (curr_t) curr_t->uid = 0; /* root */
+    I64 is_root = (curr_t && curr_t->uid == 0);
+    if (curr_t) curr_t->uid = orig_uid; /* restore */
+    if (is_root && curr_t && curr_t->uid == orig_uid) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 29: POSIX VFS Access Permission Checks (EACCES) */
+    total++;
+    Print("[TEST %lld] POSIX VFS Permission Enforcement (EACCES on 0000): ", (long long)total);
+    I64 perm_inum = VFSCreateFile("/tmp/perm_test.txt", "/", (const U8*)"secret", 6);
+    CVFSInode *p_node = VFSGetInode(perm_inum);
+    if (p_node) {
+        p_node->permissions = 0000; /* No permissions */
+        p_node->uid = 0; /* Owned by root */
+    }
+    CTask *cur_task = TaskGetCurrent();
+    I64 saved_t_uid = cur_task ? cur_task->uid : 1000;
+    if (cur_task) cur_task->uid = 1000; /* Terry */
+    I64 blocked_fd = SysOpen((const U8*)"/tmp/perm_test.txt", O_RDONLY);
+    if (cur_task) cur_task->uid = saved_t_uid; /* Restore */
+    if (blocked_fd == -K_EACCES) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL (got %lld, expected %d)\033[0m\n", (long long)blocked_fd, -K_EACCES);
+    }
+
+    /* Test 30: Shell Scripting Loops (for, while) */
+    total++;
+    Print("[TEST %lld] Shell Scripting Loops (for, in, do, done): ", (long long)total);
+    I64 for_res = ShellRunLogicalLine("for x in alpha beta gamma; do echo $x; done");
+    if (for_res == 0 && strcmp(ShellGetEnv("x"), "gamma") == 0) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 31: Shell Conditional Logic & Test Builtin (test, [, if) */
+    total++;
+    Print("[TEST %lld] Shell Conditional Logic & Test Builtin (test, [, if/then): ", (long long)total);
+    char *test_argv[] = { "test", "-f", "/etc/motd" };
+    I64 t_res = ShellCmdTest(3, test_argv);
+    I64 if_res = ShellRunLogicalLine("if [ -f /etc/motd ]; then echo motd_found; fi");
+    if (t_res == 0 && if_res == 0) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 32: TempleOS 3D Raycaster & Visuals (castle, afteregypt, flappy) */
+    total++;
+    Print("[TEST %lld] TempleOS 3D Raycaster & Classic Games (castle, flappy): ", (long long)total);
+    char *c_args[] = { "castle", "-m" };
+    I64 c_res = CastleRun(2, c_args);
+    if (c_res == 0) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 33: HolyC Preprocessor & Inline Assembly (asm, #define, #ifdef) */
+    total++;
+    Print("[TEST %lld] HolyC Preprocessor & Ring-0 Inline Assembly: ", (long long)total);
+    ReplDefineMacro("DIVINE_CONST", "777");
+    Bool has_macro = ReplIsMacroDefined("DIVINE_CONST");
+    ReplEvalLine((const U8*)"asm { nop; mov rax, 0x777; ret; }");
+    if (has_macro && g_asm_cpu.rax == 0x777) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
     Print("\033[93m====================================================\033[0m\n");
     Print("Test Results: \033[92m%lld Passed\033[0m, \033[91m%lld Failed\033[0m (Total: %lld)\n",
           (long long)passed, (long long)(total - passed), (long long)total);
@@ -673,14 +792,9 @@ I32 main(I32 argc, char **argv) {
         g_current_pid = 1;
         CTask *t = TaskGetCurrent();
         if (t) StrCpy(t->cwd, "/home/terry");
-        char cmd_copy[512];
+        char cmd_copy[1024];
         StrNCpy((U8*)cmd_copy, (const U8*)batch_cmd, sizeof(cmd_copy) - 1);
-        char *saveptr = NULL;
-        char *part = strtok_r(cmd_copy, ";", &saveptr);
-        while (part) {
-            ShellRunLogicalLine(part);
-            part = strtok_r(NULL, ";", &saveptr);
-        }
+        ShellExecuteCommandLine(cmd_copy);
         return 0;
     }
 

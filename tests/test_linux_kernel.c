@@ -445,6 +445,94 @@ static void test_linux_advanced_subsystems(void) {
     ASSERT_STR_CONTAINS(out, "Successfully installed castle", "hpm install compiles and installs holy package");
 }
 
+/*
+ * [TDD Suite 9] POSIX Manual System & HTTP Network Client (curl / man)
+ */
+static void test_posix_manual_and_network_client(void) {
+    char out[8192];
+    printf(COLOR_CYAN "\n=== [TDD Suite 9] POSIX Manual System & HTTP Network Client ===\n" COLOR_RESET);
+
+    /* 9.1 man pages */
+    exec_holy_unix("man ls", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "list directory contents", "man ls displays command description");
+    ASSERT_STR_CONTAINS(out, "SYNOPSIS", "man ls displays standard SYNOPSIS section");
+
+    exec_holy_unix("man cat", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "concatenate files", "man cat displays cat manual page");
+
+    /* 9.2 apropos and whatis */
+    exec_holy_unix("apropos raycast", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "castle", "apropos raycast locates matching castle utility");
+
+    exec_holy_unix("whatis curl", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "transfer a URL via HTTP", "whatis curl prints one-line summary");
+
+    /* 9.3 HTTP Network Client (curl) */
+    exec_holy_unix("curl -i http://localhost/", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "HTTP/1.1 200 OK", "curl -i outputs HTTP status line");
+    ASSERT_STR_CONTAINS(out, "Server: HolyNix-HTTP/1.0", "curl -i outputs server identification header");
+
+    exec_holy_unix("curl http://god.oracle/verse", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "God Oracle Response:", "curl retrieves payload from divine endpoint");
+
+    /* 9.4 Terminal Line Discipline (stty) */
+    exec_holy_unix("stty size", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "24 80", "stty size reports terminal rows and columns");
+
+    exec_holy_unix("stty", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "38400 baud", "stty reports terminal baud rate and flags");
+}
+
+/*
+ * [TDD Suite 10] Multi-User Security, Scripting Loops & TempleOS Classic Games
+ */
+static void test_posix_security_and_templeos_games(void) {
+    char out[8192];
+    printf(COLOR_CYAN "\n=== [TDD Suite 10] Multi-User Security, Scripting Loops & TempleOS Games ===\n" COLOR_RESET);
+
+    /* 10.1 Multi-User Identity and Privileges (id, groups, su, sudo) */
+    exec_holy_unix("id", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "uid=1000(terry)", "id reports terry as default UID 1000");
+
+    exec_holy_unix("groups", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "terry", "groups lists groups for current user");
+
+    exec_holy_unix("su root; whoami", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "root", "su root switches active user context to root");
+
+    exec_holy_unix("sudo whoami", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "root", "sudo temporarily escalates execution privileges to root");
+
+    /* 10.2 Conditional Expression Evaluation (test / [ ]) */
+    exec_holy_unix("test -f /etc/motd && echo TEST_FILE_OK", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "TEST_FILE_OK", "test -f verifies regular file existence");
+
+    exec_holy_unix("[ -d /home/terry ] && echo TEST_DIR_OK", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "TEST_DIR_OK", "[ -d evaluates directory presence");
+
+    /* 10.3 Shell Scripting Control Flow (for / in / do / done, if / then / else) */
+    exec_holy_unix("for i in 1 2; do echo loop_$i; done", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "loop_1", "for loop executes body for first iteration");
+    ASSERT_STR_CONTAINS(out, "loop_2", "for loop executes body for second iteration");
+
+    exec_holy_unix("if [ -f /etc/motd ]; then echo COND_TRUE; else echo COND_FALSE; fi", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "COND_TRUE", "if/then conditional branch evaluates and executes");
+
+    /* 10.4 TempleOS Classic Games & Window Manager */
+    exec_holy_unix("castle -m", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "CASTLE FRANKENSTEIN: 2D OVERHEAD MAZE MAP", "castle -m renders 2D overhead maze map");
+
+    exec_holy_unix("afteregypt", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "AFTER EGYPT: THE BURNING BUSH & SINAI", "afteregypt renders Moses quest and burning bush");
+
+    exec_holy_unix("flappy", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "FLAPPY BIRD: TEMPLEOS EDITION", "flappy renders terminal obstacle simulation");
+
+    exec_holy_unix("wintile", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "PANE 1: HolyC Shell & Editor", "wintile displays left editor pane");
+    ASSERT_STR_CONTAINS(out, "PANE 2: Divine Oracle & System Top", "wintile displays right divine system pane");
+}
+
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
     printf(COLOR_YELLOW "========================================================\n");
@@ -459,6 +547,8 @@ int main(int argc, char **argv) {
     test_linux_advanced_utilities();
     test_linux_scripting_and_templeos();
     test_linux_advanced_subsystems();
+    test_posix_manual_and_network_client();
+    test_posix_security_and_templeos_games();
 
     printf("\n" COLOR_YELLOW "========================================================\n");
     printf("  TDD Test Results: " COLOR_GREEN "%d Passed" COLOR_RESET ", "

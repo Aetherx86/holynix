@@ -40,9 +40,44 @@ I64 SysWrite(I64 fd, const U8 *buf, I64 count) {
     return -1;
 }
 
+static I64 SysCheckAccess(CVFSInode *inode, I64 flags, I64 uid, I64 gid) {
+    if (!inode) return -K_ENOENT;
+    if (uid == 0) return 0; /* root has full bypass */
+
+    I64 perm = inode->permissions;
+    I64 req = 0;
+    I64 acc = flags & 3;
+    if (acc == O_RDONLY) req |= 4;
+    else if (acc == O_WRONLY) req |= 2;
+    else if (acc == O_RDWR) req |= 6;
+
+    I64 bits = 0;
+    if (uid == inode->uid) {
+        bits = (perm >> 6) & 7;
+    } else if (gid == inode->gid) {
+        bits = (perm >> 3) & 7;
+    } else {
+        bits = perm & 7;
+    }
+
+    if ((bits & req) != req) {
+        return -K_EACCES;
+    }
+    return 0;
+}
+
 I64 SysOpen(const U8 *path, I64 flags) {
     CTask *t = TaskGetCurrent();
     if (!t || !path) return -K_EINVAL;
+
+    I64 inum = VFSResolvePath(path, t->cwd);
+    if (inum >= 0) {
+        CVFSInode *inode = VFSGetInode(inum);
+        if (inode && inode->type == VFS_REGULAR) {
+            I64 acc_err = SysCheckAccess(inode, flags, t->uid, t->gid);
+            if (acc_err < 0) return acc_err;
+        }
+    }
 
     I64 pfd = -1;
     for (I64 i = 0; i < MAX_FDS; ++i) {
@@ -55,6 +90,14 @@ I64 SysOpen(const U8 *path, I64 flags) {
 
     I64 vfs_fd = VFSOpen(path, t->cwd, flags);
     if (vfs_fd < 0) return vfs_fd;
+
+    if (inum < 0) {
+        CVFSInode *created_node = VFSGetInode(g_open_files[vfs_fd].inode_num);
+        if (created_node) {
+            created_node->uid = t->uid;
+            created_node->gid = t->gid;
+        }
+    }
 
     t->fd_table[pfd] = vfs_fd;
     return pfd;

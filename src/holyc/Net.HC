@@ -1,13 +1,19 @@
 /*
  * HolyC Unix Kernel - Simulated Network Subsystem & ICMP Diagnostics (Net.HC)
  * Virtual network interfaces (lo, eth0), network statistics, socket monitors,
- * and ICMP ping diagnostics.
+ * ICMP ping diagnostics, and HTTP client (curl / fetch).
  */
 
 #ifndef NET_HC
 #define NET_HC
 
 #include "Types.HC"
+#include "VFS.HC"
+#include "GodWords.HC"
+
+#define CURL_FLAG_VERBOSE   0x01
+#define CURL_FLAG_HEAD_ONLY 0x02
+#define CURL_FLAG_SILENT    0x04
 
 class CNetInterface {
     char name[16];
@@ -100,6 +106,98 @@ I64 NetStat(char *out_buf, I64 max_len) {
         "tcp        0      0 0.0.0.0:80              0.0.0.0:*               LISTEN\n"
         "tcp        0      0 0.0.0.0:7777            0.0.0.0:*               LISTEN (God-Oracle)\n"
         "tcp        0      0 127.0.0.1:7777          127.0.0.1:54321         ESTABLISHED\n");
+
+    return offset;
+}
+
+/*
+ * HTTP Network Client (curl / fetch)
+ */
+I64 NetCurl(const char *url, I64 flags, const char *outfile, char *out_buf, I64 max_len) {
+    if (!url || !out_buf || max_len <= 0) return -1;
+
+    char host[128] = "localhost";
+    char path[128] = "/";
+    int port = 80;
+
+    /* Parse URL */
+    const char *p = url;
+    if (strncmp(p, "http://", 7) == 0) p += 7;
+    else if (strncmp(p, "https://", 8) == 0) { p += 8; port = 443; }
+
+    const char *slash = strchr(p, '/');
+    if (slash) {
+        size_t hlen = slash - p;
+        if (hlen > 127) hlen = 127;
+        strncpy(host, p, hlen);
+        host[hlen] = '\0';
+        strncpy(path, slash, sizeof(path) - 1);
+        path[sizeof(path) - 1] = '\0';
+    } else {
+        strncpy(host, p, sizeof(host) - 1);
+        host[sizeof(host) - 1] = '\0';
+    }
+
+    char *colon = strchr(host, ':');
+    if (colon) {
+        *colon = '\0';
+        port = atoi(colon + 1);
+    }
+
+    /* Generate HTTP response content based on target host/path */
+    char body[1024];
+    const char *content_type = "text/plain";
+
+    if (strstr(host, "god") != NULL || strstr(path, "god") != NULL || strstr(path, "verse") != NULL) {
+        /* Divine oracle endpoint */
+        char words[128];
+        words[0] = '\0';
+        for (int w = 0; w < 6; ++w) {
+            strncat(words, (const char*)GodGetWord(), sizeof(words) - strlen(words) - 2);
+            if (w + 1 < 6) strncat(words, " ", sizeof(words) - strlen(words) - 1);
+        }
+        snprintf(body, sizeof(body), "God Oracle Response:\n%s\n", words);
+    } else if (strstr(path, "packages") != NULL || strstr(host, "hpm") != NULL) {
+        snprintf(body, sizeof(body),
+            "Holy Package Repository Manifest (v1.0):\n"
+            "- castle (3D Labyrinth Raycaster)\n"
+            "- afteregypt (Moses Sinai Quest)\n"
+            "- flappy (TempleOS Bird Physics)\n"
+            "- bible (KJV Scripture Search)\n");
+    } else if (strstr(path, "version") != NULL || strcmp(path, "/version") == 0) {
+        snprintf(body, sizeof(body), "HolyC-Unix Kernel 1.0.0 (Terry Davis Memorial Edition x86_64)\n");
+    } else {
+        snprintf(body, sizeof(body),
+            "<!DOCTYPE html>\n<html>\n<head><title>HolyC Unix Web</title></head>\n"
+            "<body><h1>Welcome to HolyC Unix HTTP Server</h1>\n"
+            "<p>Host: %s:%d | Path: %s</p>\n"
+            "<p>\"Simplicity is divine.\" - Terry A. Davis</p>\n</body>\n</html>\n",
+            host, port, path);
+        content_type = "text/html";
+    }
+
+    size_t body_len = strlen(body);
+    I64 offset = 0;
+
+    if (flags & (CURL_FLAG_VERBOSE | CURL_FLAG_HEAD_ONLY)) {
+        offset += snprintf(out_buf + offset, max_len - offset,
+            "HTTP/1.1 200 OK\r\n"
+            "Date: Sat, 24 Oct 2026 12:00:00 GMT\r\n"
+            "Server: HolyNix-HTTP/1.0 (Terry Davis Edition)\r\n"
+            "Content-Type: %s\r\n"
+            "Content-Length: %zu\r\n"
+            "Connection: close\r\n\r\n",
+            content_type, body_len);
+    }
+
+    if (!(flags & CURL_FLAG_HEAD_ONLY)) {
+        offset += snprintf(out_buf + offset, max_len - offset, "%s", body);
+    }
+
+    /* Save to VFS file if requested */
+    if (outfile && outfile[0] != '\0') {
+        VFSCreateFile(outfile, "/", (const U8*)body, (I64)body_len);
+    }
 
     return offset;
 }

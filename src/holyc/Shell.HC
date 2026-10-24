@@ -28,6 +28,8 @@ static I64 g_env_count = 0;
 static I64 g_last_exit_code = 0;
 static U8 g_oldpwd[MAX_PATH_LEN] = "/home/terry";
 
+I64 ShellExecuteCommand(I64 argc, char **argv);
+
 #define MAX_ALIASES 32
 
 class CAlias {
@@ -472,7 +474,327 @@ U0 ShellCmdUptime(I64 argc, char **argv) {
 U0 ShellCmdWhoami(I64 argc, char **argv) {
     (U0)argc; (U0)argv;
     CTask *t = TaskGetCurrent();
-    ShellPrintOut("%s\n", (t && t->uid == 0) ? "root" : "terry");
+    ShellPrintOut("%s\n", (t && t->uid == 0) ? "root" : (t && t->uid == 777 ? "god" : "terry"));
+}
+
+/*
+ * Built-in Command: id
+ */
+U0 ShellCmdId(I64 argc, char **argv) {
+    CTask *t = TaskGetCurrent();
+    const char *u = "terry";
+    if (argc > 1) {
+        u = argv[1];
+    } else if (t) {
+        if (t->uid == 0) u = "root";
+        else if (t->uid == 777) u = "god";
+    }
+
+    if (strcmp(u, "root") == 0) {
+        ShellPrintOut("uid=0(root) gid=0(root) groups=0(root),10(wheel)\n");
+    } else if (strcmp(u, "god") == 0) {
+        ShellPrintOut("uid=777(god) gid=777(god) groups=777(god),1000(terry)\n");
+    } else {
+        ShellPrintOut("uid=1000(terry) gid=1000(terry) groups=1000(terry),10(wheel),100(users)\n");
+    }
+}
+
+/*
+ * Built-in Command: groups
+ */
+U0 ShellCmdGroups(I64 argc, char **argv) {
+    CTask *t = TaskGetCurrent();
+    const char *u = "terry";
+    if (argc > 1) {
+        u = argv[1];
+    } else if (t && t->uid == 0) {
+        u = "root";
+    }
+
+    if (strcmp(u, "root") == 0) {
+        ShellPrintOut("root wheel\n");
+    } else {
+        ShellPrintOut("terry wheel users divine\n");
+    }
+}
+
+/*
+ * Built-in Command: su
+ */
+U0 ShellCmdSu(I64 argc, char **argv) {
+    CTask *t = TaskGetCurrent();
+    const char *u = (argc > 1) ? argv[1] : "root";
+
+    if (strcmp(u, "root") == 0) {
+        if (t) { t->uid = 0; t->gid = 0; }
+        ShellSetEnv("USER", "root");
+        ShellSetEnv("HOME", "/root");
+        ShellPrintOut("Switched to superuser root (UID 0)\n");
+    } else if (strcmp(u, "terry") == 0) {
+        if (t) { t->uid = 1000; t->gid = 1000; }
+        ShellSetEnv("USER", "terry");
+        ShellSetEnv("HOME", "/home/terry");
+        ShellPrintOut("Switched to user terry (UID 1000)\n");
+    } else if (strcmp(u, "god") == 0) {
+        if (t) { t->uid = 777; t->gid = 777; }
+        ShellSetEnv("USER", "god");
+        ShellSetEnv("HOME", "/home/god");
+        ShellPrintOut("Switched to user god (UID 777)\n");
+    } else {
+        ShellPrintOut("su: user '%s' does not exist\n", u);
+        g_last_exit_code = 1;
+        return;
+    }
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Command: sudo
+ */
+I64 ShellCmdSudo(I64 argc, char **argv) {
+    if (argc < 2) {
+        ShellPrintOut("usage: sudo command [args...]\n");
+        g_last_exit_code = 1;
+        return 1;
+    }
+    CTask *t = TaskGetCurrent();
+    I64 saved_uid = t ? t->uid : 1000;
+    I64 saved_gid = t ? t->gid : 1000;
+
+    if (t) {
+        t->uid = 0;
+        t->gid = 0;
+    }
+
+    I64 res = ShellExecuteCommand(argc - 1, argv + 1);
+
+    if (t) {
+        t->uid = saved_uid;
+        t->gid = saved_gid;
+    }
+    return res;
+}
+
+/*
+ * Built-in Command: passwd
+ */
+U0 ShellCmdPasswd(I64 argc, char **argv) {
+    const char *u = (argc > 1) ? argv[1] : "terry";
+    ShellPrintOut("passwd: password updated successfully for %s\n", u);
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Command: stty
+ */
+U0 ShellCmdStty(I64 argc, char **argv) {
+    if (argc > 1) {
+        if (strcmp(argv[1], "size") == 0) {
+            ShellPrintOut("24 80\n");
+            g_last_exit_code = 0;
+            return;
+        } else if (strcmp(argv[1], "raw") == 0) {
+            ShellPrintOut("stty: terminal mode set to raw (-icanon -echo)\n");
+            g_last_exit_code = 0;
+            return;
+        } else if (strcmp(argv[1], "cooked") == 0) {
+            ShellPrintOut("stty: terminal mode set to cooked (+icanon +echo)\n");
+            g_last_exit_code = 0;
+            return;
+        } else if (strcmp(argv[1], "echo") == 0) {
+            ShellPrintOut("stty: echo enabled\n");
+            g_last_exit_code = 0;
+            return;
+        } else if (strcmp(argv[1], "-echo") == 0) {
+            ShellPrintOut("stty: echo disabled\n");
+            g_last_exit_code = 0;
+            return;
+        }
+    }
+
+    ShellPrintOut("speed 38400 baud; rows 24; columns 80; line = 0;\n"
+                  "intr = ^C; quit = ^\\; erase = ^?; kill = ^U; eof = ^D; eol = <undef>;\n"
+                  "-parenb -parodd +cs8 -hupcl +cstopb -cread -clocal -crtscts\n"
+                  "-ignbrk -brkint -ignpar -parmrk -inpck -istrip -inlcr -igncr -icrnl\n"
+                  "-isig -icanon -iexten -echo -echoe -echok -echonl -noflsh\n");
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Command: test / [
+ */
+I64 ShellCmdTest(I64 argc, char **argv) {
+    if (argc <= 1) {
+        g_last_exit_code = 1;
+        return 1;
+    }
+
+    I64 end_idx = argc - 1;
+    if (strcmp(argv[0], "[") == 0) {
+        if (strcmp(argv[end_idx], "]") == 0) {
+            end_idx--;
+        }
+    }
+
+    I64 num_args = end_idx;
+    if (num_args < 1) {
+        g_last_exit_code = 1;
+        return 1;
+    }
+
+    I64 res = 1;
+    CTask *t = TaskGetCurrent();
+    const U8 *cwd = t ? t->cwd : (const U8*)"/";
+
+    if (num_args == 1) {
+        res = (argv[1][0] != '\0') ? 0 : 1;
+    } else if (num_args == 2) {
+        const char *op = argv[1];
+        const char *arg = argv[2];
+        if (strcmp(op, "-f") == 0) {
+            I64 inum = VFSResolvePath((const U8*)arg, cwd);
+            CVFSInode *inode = VFSGetInode(inum);
+            res = (inode && inode->type == VFS_REGULAR) ? 0 : 1;
+        } else if (strcmp(op, "-d") == 0) {
+            I64 inum = VFSResolvePath((const U8*)arg, cwd);
+            CVFSInode *inode = VFSGetInode(inum);
+            res = (inode && inode->type == VFS_DIRECTORY) ? 0 : 1;
+        } else if (strcmp(op, "-e") == 0) {
+            I64 inum = VFSResolvePath((const U8*)arg, cwd);
+            res = (inum >= 0) ? 0 : 1;
+        } else if (strcmp(op, "-z") == 0) {
+            res = (arg[0] == '\0') ? 0 : 1;
+        } else if (strcmp(op, "-n") == 0) {
+            res = (arg[0] != '\0') ? 0 : 1;
+        }
+    } else if (num_args == 3) {
+        const char *left = argv[1];
+        const char *op = argv[2];
+        const char *right = argv[3];
+
+        if (strcmp(op, "=") == 0 || strcmp(op, "==") == 0) {
+            res = (strcmp(left, right) == 0) ? 0 : 1;
+        } else if (strcmp(op, "!=") == 0) {
+            res = (strcmp(left, right) != 0) ? 0 : 1;
+        } else if (strcmp(op, "-eq") == 0) {
+            res = (atoll(left) == atoll(right)) ? 0 : 1;
+        } else if (strcmp(op, "-ne") == 0) {
+            res = (atoll(left) != atoll(right)) ? 0 : 1;
+        } else if (strcmp(op, "-lt") == 0) {
+            res = (atoll(left) < atoll(right)) ? 0 : 1;
+        } else if (strcmp(op, "-le") == 0) {
+            res = (atoll(left) <= atoll(right)) ? 0 : 1;
+        } else if (strcmp(op, "-gt") == 0) {
+            res = (atoll(left) > atoll(right)) ? 0 : 1;
+        } else if (strcmp(op, "-ge") == 0) {
+            res = (atoll(left) >= atoll(right)) ? 0 : 1;
+        }
+    }
+
+    g_last_exit_code = res;
+    return res;
+}
+
+/*
+ * Built-in Commands: man, apropos, whatis
+ */
+U0 ShellCmdMan(I64 argc, char **argv) {
+    if (argc == 2) {
+        g_last_exit_code = ManLookup(argv[1], 0);
+    } else if (argc >= 3) {
+        g_last_exit_code = ManLookup(argv[2], atoi(argv[1]));
+    } else {
+        Print("What manual page do you want?\n");
+        g_last_exit_code = 1;
+    }
+}
+
+U0 ShellCmdApropos(I64 argc, char **argv) {
+    if (argc < 2) {
+        Print("apropos what?\n");
+        g_last_exit_code = 1;
+        return;
+    }
+    g_last_exit_code = ManApropos(argv[1]);
+}
+
+U0 ShellCmdWhatis(I64 argc, char **argv) {
+    if (argc < 2) {
+        Print("whatis what?\n");
+        g_last_exit_code = 1;
+        return;
+    }
+    g_last_exit_code = ManWhatis(argv[1]);
+}
+
+/*
+ * Built-in Command: curl / fetch
+ */
+U0 ShellCmdCurl(I64 argc, char **argv) {
+    if (argc < 2) {
+        Print("curl: try 'curl --help' or 'curl <url>'\n");
+        g_last_exit_code = 1;
+        return;
+    }
+
+    I64 flags = 0;
+    const char *url = NULL;
+    const char *outfile = NULL;
+
+    for (I64 i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "-v") == 0) {
+            flags |= CURL_FLAG_VERBOSE;
+        } else if (strcmp(argv[i], "-I") == 0 || strcmp(argv[i], "--head") == 0) {
+            flags |= CURL_FLAG_HEAD_ONLY;
+        } else if (strcmp(argv[i], "-s") == 0) {
+            flags |= CURL_FLAG_SILENT;
+        } else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+            outfile = argv[++i];
+        } else if (!url) {
+            url = argv[i];
+        }
+    }
+
+    if (!url) {
+        Print("curl: no URL specified\n");
+        g_last_exit_code = 1;
+        return;
+    }
+
+    char out_buf[4096];
+    I64 n = NetCurl(url, flags, outfile, out_buf, sizeof(out_buf));
+    if (n > 0) {
+        ShellPrintOut("%s", out_buf);
+        g_last_exit_code = 0;
+    } else {
+        Print("curl: failed to retrieve %s\n", url);
+        g_last_exit_code = 1;
+    }
+}
+
+/*
+ * Built-in Commands: castle, afteregypt, flappy, wintile
+ */
+U0 ShellCmdCastle(I64 argc, char **argv) {
+    g_last_exit_code = CastleRun(argc, argv);
+}
+
+U0 ShellCmdAfterEgypt(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    AfterEgyptRun();
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdFlappy(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    FlappyRun();
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdWinTile(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    WinTileRun();
+    g_last_exit_code = 0;
 }
 
 /*
@@ -2110,6 +2432,15 @@ U0 ShellCmdHelp(I64 argc, char **argv) {
     Print("  \033[92mmemdump / peek/poke\033[0m Ring-0 raw kernel memory inspector & editor\n");
     Print("  \033[92mdisasm / u [addr]\033[0m   In-kernel x86-64 machine code disassembler\n");
     Print("  \033[92mhpm [list,install]\033[0m  Holy Package Manager (Terry Davis repository)\n");
+    Print("  \033[92mcastle [-m]\033[0m         TempleOS Castle Frankenstein 3D raycaster\n");
+    Print("  \033[92mafteregypt\033[0m          Moses at Mount Sinai, Burning Bush & Manna\n");
+    Print("  \033[92mflappy\033[0m              Terminal ASCII physics obstacle game\n");
+    Print("  \033[92mwintile / split\033[0m     TempleOS dual split-pane window manager\n");
+    Print("  \033[92mman / apropos / whatis\033[0m POSIX online manual pages & syscall docs\n");
+    Print("  \033[92mcurl / fetch [URL]\033[0m  HTTP client with header & payload fetching\n");
+    Print("  \033[92msu / sudo / id\033[0m      POSIX multi-user switching & permissions\n");
+    Print("  \033[92mstty [size,raw]\033[0m     Terminal line discipline configuration\n");
+    Print("  \033[92mtest / [ ... ]\033[0m      POSIX conditional expression evaluation\n");
     Print("  \033[92mclear\033[0m               Clear terminal screen (also Ctrl+L)\n");
     Print("  \033[92muname [-a]\033[0m          Print operating system name & hardware info\n");
     Print("  \033[92muptime / whoami\033[0m     Show uptime / print effective user\n");
@@ -2197,6 +2528,21 @@ I64 ShellExecuteCommand(I64 argc, char **argv) {
     else if (strcmp(cmd, "poke") == 0)   ShellCmdPoke(argc, argv);
     else if (strcmp(cmd, "disasm") == 0 || strcmp(cmd, "u") == 0) ShellCmdDisasm(argc, argv);
     else if (strcmp(cmd, "hpm") == 0 || strcmp(cmd, "getgod") == 0) ShellCmdHpm(argc, argv);
+    else if (strcmp(cmd, "test") == 0 || strcmp(cmd, "[") == 0) return ShellCmdTest(argc, argv);
+    else if (strcmp(cmd, "id") == 0)     ShellCmdId(argc, argv);
+    else if (strcmp(cmd, "groups") == 0) ShellCmdGroups(argc, argv);
+    else if (strcmp(cmd, "su") == 0)     ShellCmdSu(argc, argv);
+    else if (strcmp(cmd, "sudo") == 0)   return ShellCmdSudo(argc, argv);
+    else if (strcmp(cmd, "passwd") == 0) ShellCmdPasswd(argc, argv);
+    else if (strcmp(cmd, "stty") == 0)   ShellCmdStty(argc, argv);
+    else if (strcmp(cmd, "curl") == 0 || strcmp(cmd, "fetch") == 0) ShellCmdCurl(argc, argv);
+    else if (strcmp(cmd, "man") == 0)    ShellCmdMan(argc, argv);
+    else if (strcmp(cmd, "apropos") == 0) ShellCmdApropos(argc, argv);
+    else if (strcmp(cmd, "whatis") == 0) ShellCmdWhatis(argc, argv);
+    else if (strcmp(cmd, "castle") == 0) ShellCmdCastle(argc, argv);
+    else if (strcmp(cmd, "afteregypt") == 0) ShellCmdAfterEgypt(argc, argv);
+    else if (strcmp(cmd, "flappy") == 0) ShellCmdFlappy(argc, argv);
+    else if (strcmp(cmd, "wintile") == 0 || strcmp(cmd, "split") == 0) ShellCmdWinTile(argc, argv);
     else if (strcmp(cmd, "true") == 0)   { g_last_exit_code = 0; return 0; }
     else if (strcmp(cmd, "false") == 0)  { g_last_exit_code = 1; return 1; }
     else if (strcmp(cmd, "top") == 0)    ShellCmdTop(argc, argv);
@@ -2225,6 +2571,37 @@ I64 ShellExecuteCommand(I64 argc, char **argv) {
         }
     }
     return 0;
+}
+
+static U0 ShellExpandToken(const char *token, char *out, size_t out_len) {
+    if (!token || !out || out_len == 0) return;
+    size_t oi = 0;
+    out[0] = '\0';
+
+    for (size_t i = 0; token[i] && oi < out_len - 1; ) {
+        if (token[i] == '$' && (isalnum((unsigned char)token[i + 1]) || token[i + 1] == '_' || token[i + 1] == '?')) {
+            i++;
+            char var_name[64];
+            int vi = 0;
+            if (token[i] == '?') {
+                var_name[vi++] = token[i++];
+            } else {
+                while (token[i] && (isalnum((unsigned char)token[i]) || token[i] == '_') && vi < 63) {
+                    var_name[vi++] = token[i++];
+                }
+            }
+            var_name[vi] = '\0';
+            const char *val = ShellGetEnv(var_name);
+            if (val) {
+                while (*val && oi < out_len - 1) {
+                    out[oi++] = *val++;
+                }
+            }
+        } else {
+            out[oi++] = token[i++];
+        }
+    }
+    out[oi] = '\0';
 }
 
 /*
@@ -2346,15 +2723,16 @@ I64 ShellExecutePipeline(char *cmdline) {
     }
 
     /* Tokenize command arguments */
+    static char s_expanded_tokens[MAX_ARGS][256];
     char *argv[MAX_ARGS];
     I64 argc = 0;
     char *saveptr = NULL;
     char *token = strtok_r(cmdline, " \t\r\n", &saveptr);
     while (token && argc < MAX_ARGS - 1) {
-        if (token[0] == '$') {
-            const char *val = ShellGetEnv(token + 1);
-            if (val) argv[argc++] = (char*)val;
-            else argv[argc++] = (char*)"";
+        if (strchr(token, '$') != NULL) {
+            ShellExpandToken(token, s_expanded_tokens[argc], sizeof(s_expanded_tokens[argc]));
+            argv[argc] = s_expanded_tokens[argc];
+            argc++;
         } else {
             argv[argc++] = token;
         }
@@ -2453,6 +2831,137 @@ I64 ShellRunLogicalLine(char *line) {
 
     TermAddHistory(line);
 
+    /* Scripting: for <var> in <items...>; do <cmds>; done */
+    if (strncmp(line, "for ", 4) == 0) {
+        char *p_in = strstr(line, " in ");
+        char *p_do = strstr(line, "; do ");
+        if (!p_do) p_do = strstr(line, " do ");
+        char *p_done = strstr(line, "; done");
+        if (!p_done) p_done = strstr(line, " done");
+        if (p_in && p_do && p_done && p_in < p_do && p_do < p_done) {
+            char var_name[64];
+            size_t vlen = p_in - (line + 4);
+            if (vlen > 63) vlen = 63;
+            strncpy(var_name, line + 4, vlen);
+            var_name[vlen] = '\0';
+            while (vlen > 0 && isspace((unsigned char)var_name[vlen - 1])) var_name[--vlen] = '\0';
+
+            char items_str[512];
+            size_t ilen = p_do - (p_in + 4);
+            if (ilen > 511) ilen = 511;
+            strncpy(items_str, p_in + 4, ilen);
+            items_str[ilen] = '\0';
+
+            char body[512];
+            char *body_start = p_do + (*p_do == ';' ? 5 : 4);
+            size_t blen = p_done - body_start;
+            if (blen > 511) blen = 511;
+            strncpy(body, body_start, blen);
+            body[blen] = '\0';
+
+            I64 last_res = 0;
+            char *saveptr = NULL;
+            char *item = strtok_r(items_str, " \t\r\n", &saveptr);
+            while (item) {
+                ShellSetEnv(var_name, item);
+                char body_copy[512];
+                strncpy(body_copy, body, sizeof(body_copy) - 1);
+                body_copy[sizeof(body_copy) - 1] = '\0';
+                last_res = ShellRunLogicalLine(body_copy);
+                if (last_res == -999) return -999;
+                item = strtok_r(NULL, " \t\r\n", &saveptr);
+            }
+            return last_res;
+        }
+    }
+
+    /* Scripting: if <cond>; then <cmds>; [else <cmds>;] fi */
+    if (strncmp(line, "if ", 3) == 0) {
+        char *p_then = strstr(line, "; then ");
+        if (!p_then) p_then = strstr(line, " then ");
+        char *p_fi = strstr(line, "; fi");
+        if (!p_fi) p_fi = strstr(line, " fi");
+        if (p_then && p_fi && p_then < p_fi) {
+            char cond[256];
+            size_t clen = p_then - (line + 3);
+            if (clen > 255) clen = 255;
+            strncpy(cond, line + 3, clen);
+            cond[clen] = '\0';
+
+            char *then_start = p_then + (*p_then == ';' ? 7 : 6);
+            char *p_else = strstr(then_start, "; else ");
+            if (!p_else) p_else = strstr(then_start, " else ");
+
+            char then_part[512];
+            char else_part[512];
+            else_part[0] = '\0';
+
+            if (p_else && p_else < p_fi) {
+                size_t tlen = p_else - then_start;
+                if (tlen > 511) tlen = 511;
+                strncpy(then_part, then_start, tlen);
+                then_part[tlen] = '\0';
+
+                char *else_start = p_else + (*p_else == ';' ? 7 : 6);
+                size_t elen = p_fi - else_start;
+                if (elen > 511) elen = 511;
+                strncpy(else_part, else_start, elen);
+                else_part[elen] = '\0';
+            } else {
+                size_t tlen = p_fi - then_start;
+                if (tlen > 511) tlen = 511;
+                strncpy(then_part, then_start, tlen);
+                then_part[tlen] = '\0';
+            }
+
+            I64 c_res = ShellRunLogicalLine(cond);
+            if (c_res == 0) {
+                return ShellRunLogicalLine(then_part);
+            } else if (else_part[0] != '\0') {
+                return ShellRunLogicalLine(else_part);
+            }
+            return 0;
+        }
+    }
+
+    /* Scripting: while <cond>; do <cmds>; done */
+    if (strncmp(line, "while ", 6) == 0) {
+        char *p_do = strstr(line, "; do ");
+        if (!p_do) p_do = strstr(line, " do ");
+        char *p_done = strstr(line, "; done");
+        if (!p_done) p_done = strstr(line, " done");
+        if (p_do && p_done && p_do < p_done) {
+            char cond[256];
+            size_t clen = p_do - (line + 6);
+            if (clen > 255) clen = 255;
+            strncpy(cond, line + 6, clen);
+            cond[clen] = '\0';
+
+            char body[512];
+            char *body_start = p_do + (*p_do == ';' ? 5 : 4);
+            size_t blen = p_done - body_start;
+            if (blen > 511) blen = 511;
+            strncpy(body, body_start, blen);
+            body[blen] = '\0';
+
+            I64 last_res = 0;
+            I64 loop_iters = 0;
+            while (loop_iters++ < 100) {
+                char cond_copy[256];
+                strncpy(cond_copy, cond, sizeof(cond_copy) - 1);
+                cond_copy[sizeof(cond_copy) - 1] = '\0';
+                if (ShellRunLogicalLine(cond_copy) != 0) break;
+
+                char body_copy[512];
+                strncpy(body_copy, body, sizeof(body_copy) - 1);
+                body_copy[sizeof(body_copy) - 1] = '\0';
+                last_res = ShellRunLogicalLine(body_copy);
+                if (last_res == -999) return -999;
+            }
+            return last_res;
+        }
+    }
+
     char *p = line;
     I64 last_res = 0;
     while (*p) {
@@ -2545,15 +3054,120 @@ I64 ShellExecuteScript(const char *path) {
     char *saveptr = NULL;
     char *line = strtok_r(buf, "\r\n", &saveptr);
     I64 res = 0;
+    char composite[1024];
+    composite[0] = '\0';
+    Bool in_block = FALSE;
+
     while (line) {
         while (*line && isspace((unsigned char)*line)) line++;
         if (*line && *line != '#') {
-            res = ShellRunLogicalLine(line);
-            if (res == -999) break;
+            if (!in_block && (strncmp(line, "for ", 4) == 0 || strncmp(line, "if ", 3) == 0 || strncmp(line, "while ", 6) == 0) &&
+                strstr(line, "done") == NULL && strstr(line, "fi") == NULL) {
+                in_block = TRUE;
+                strncpy(composite, line, sizeof(composite) - 1);
+                composite[sizeof(composite) - 1] = '\0';
+            } else if (in_block) {
+                size_t clen = strlen(composite);
+                if (clen < sizeof(composite) - 2) {
+                    composite[clen++] = ' ';
+                    composite[clen] = '\0';
+                }
+                strncat(composite, line, sizeof(composite) - clen - 1);
+                if (strcmp(line, "done") == 0 || strstr(line, " done") != NULL ||
+                    strcmp(line, "fi") == 0 || strstr(line, " fi") != NULL) {
+                    in_block = FALSE;
+                    res = ShellRunLogicalLine(composite);
+                    composite[0] = '\0';
+                    if (res == -999) break;
+                }
+            } else {
+                res = ShellRunLogicalLine(line);
+                if (res == -999) break;
+            }
         }
         line = strtok_r(NULL, "\r\n", &saveptr);
     }
+    if (in_block && composite[0]) {
+        res = ShellRunLogicalLine(composite);
+    }
     return res;
+}
+
+/*
+ * Parse and execute a full command line preserving compound control flow blocks
+ */
+I64 ShellExecuteCommandLine(char *line) {
+    while (*line && isspace((unsigned char)*line)) line++;
+    if (!*line) return 0;
+
+    char *curr = line;
+    I64 last_res = 0;
+    while (*curr) {
+        while (*curr && isspace((unsigned char)*curr)) curr++;
+        if (!*curr) break;
+
+        /* Compound block: for ... done */
+        if (strncmp(curr, "for ", 4) == 0) {
+            char *p_done = strstr(curr, "; done");
+            if (!p_done) p_done = strstr(curr, " done");
+            if (p_done) {
+                char *block_end = p_done + (*p_done == ';' ? 6 : 5);
+                while (*block_end && isspace((unsigned char)*block_end)) block_end++;
+                char next_c = *block_end;
+                *block_end = '\0';
+                last_res = ShellRunLogicalLine(curr);
+                *block_end = next_c;
+                if (next_c == ';') block_end++;
+                curr = block_end;
+                continue;
+            }
+        }
+        /* Compound block: if ... fi */
+        else if (strncmp(curr, "if ", 3) == 0) {
+            char *p_fi = strstr(curr, "; fi");
+            if (!p_fi) p_fi = strstr(curr, " fi");
+            if (p_fi) {
+                char *block_end = p_fi + (*p_fi == ';' ? 4 : 3);
+                while (*block_end && isspace((unsigned char)*block_end)) block_end++;
+                char next_c = *block_end;
+                *block_end = '\0';
+                last_res = ShellRunLogicalLine(curr);
+                *block_end = next_c;
+                if (next_c == ';') block_end++;
+                curr = block_end;
+                continue;
+            }
+        }
+        /* Compound block: while ... done */
+        else if (strncmp(curr, "while ", 6) == 0) {
+            char *p_done = strstr(curr, "; done");
+            if (!p_done) p_done = strstr(curr, " done");
+            if (p_done) {
+                char *block_end = p_done + (*p_done == ';' ? 6 : 5);
+                while (*block_end && isspace((unsigned char)*block_end)) block_end++;
+                char next_c = *block_end;
+                *block_end = '\0';
+                last_res = ShellRunLogicalLine(curr);
+                *block_end = next_c;
+                if (next_c == ';') block_end++;
+                curr = block_end;
+                continue;
+            }
+        }
+
+        /* Normal command up to semicolon */
+        char *semi = strchr(curr, ';');
+        if (semi) {
+            *semi = '\0';
+            last_res = ShellRunLogicalLine(curr);
+            curr = semi + 1;
+            if (last_res == -999) return -999;
+        } else {
+            last_res = ShellRunLogicalLine(curr);
+            break;
+        }
+    }
+    return last_res;
 }
 
 /*
@@ -2589,15 +3203,9 @@ U0 ShellRun() {
         }
         if (n == 0) continue;
 
-        /* Handle semicolon separated commands */
-        char *saveptr = NULL;
-        char *cmd_part = strtok_r((char*)line, ";", &saveptr);
-        while (cmd_part) {
-            I64 r = ShellRunLogicalLine(cmd_part);
-            if (r == -999) {
-                return; /* Clean exit */
-            }
-            cmd_part = strtok_r(NULL, ";", &saveptr);
+        I64 r = ShellExecuteCommandLine((char*)line);
+        if (r == -999) {
+            return;
         }
     }
 }

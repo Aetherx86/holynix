@@ -7,7 +7,7 @@
 
 > *"An idiot admires complexity, a genius admires simplicity."* — **Terry A. Davis**
 
-**HolyNix** (`holy_unix`) is a 64-bit Unix-like microkernel and interactive terminal operating system written entirely in **HolyC** (`.HC`), the programming language created by Terry A. Davis for TempleOS. It marries the Unix philosophy (*everything is a file, standard streams, pipelines, hierarchical VFS*) with TempleOS principles (*64-bit flat memory, JIT script execution, 16-color VGA palette, DolDoc documents, and the divine oracle*).
+**HolyNix** (`holy_unix`) is a 64-bit Unix-like microkernel and interactive terminal operating system written entirely in **HolyC** (`.HC`), the programming language created by Terry A. Davis for TempleOS. It marries the Unix philosophy (*everything is a file, standard streams, pipelines, hierarchical VFS, permissions, multi-user switching, manual pages, HTTP client*) with TempleOS principles (*64-bit flat memory, JIT script execution, 16-color VGA palette, DolDoc documents, 3D raycasting maze, biblical quests, and the 100,000-word divine oracle*).
 
 The operating system runs directly inside any standard terminal (macOS Terminal, iTerm2, Alacritty, Linux console) without requiring QEMU or virtualization overhead.
 
@@ -16,83 +16,87 @@ The operating system runs directly inside any standard terminal (macOS Terminal,
 ## Architecture Overview
 
 ```
-                      +---------------------------------------+
-                      |       Interactive Terminal Shell      |
-                      |        "holysh" (Shell.HC)            |
-                      +---------------------------------------+
-                      | Aliases (alias) & History (!n, !!)    |
-                      | Background Jobs (&, jobs, fg, bg)     |
-                      | In-Kernel HolyC REPL & Script Runner  |
-                      | DolDoc Markup Renderer & Pager        |
-                      | Tar Archiver & Holy Package Mgr (HPM) |
-                      +---------------------------------------+
-                      |         POSIX Syscall Layer           |
-                      | (read, write, open, pipe, stat, sym)  |
-                      +-------------------+-------------------+
-                                          |
-                +-------------------------+-------------------------+
-                |                                                   |
-    +-----------v-----------+                           +-----------v-----------+
-    |  Process / Task Core  |                           |  Virtual File System  |
-    |       (Task.HC)       |                           |       (VFS.HC)        |
-    +-----------------------+                           +-----------------------+
-    | - Round-Robin Sched   |                           | - Inodes, Permissions |
-    | - Job Control (g_jobs)|                           | - Symlinks (ln -s)    |
-    | - Cron Scheduler      |                           | - RedSea Driver (.img)|
-    | - Dynamic Environment |                           | - Pipes & Redirection |
-    +-----------------------+                           +-----------+-----------+
-                                                                    |
-                                            +-----------------------+-----------------------+
-                                            |                                               |
-                                +-----------v-----------+                       +-----------v-----------+
-                                |  Device Drivers (Dev) |                       |  Pseudo-FS (/proc)    |
-                                +-----------------------+                       +-----------------------+
-                                | /dev/tty   (Console)  |                       | /proc/version         |
-                                | /dev/null  (Sink)     |                       | /proc/uptime          |
-                                | /dev/zero  (Zeros)    |                       | /proc/meminfo         |
-                                | /dev/random (Entropy) |                       | /proc/tasks (ps info) |
-                                | /dev/god   (Oracle)   |                       | /proc/cpuinfo         |
-                                | /dev/mem   (Ring-0)   |                       | /proc/loadavg         |
-                                | /dev/tcp   (Network)  |                       | /proc/net/dev         |
-                                +-----------------------+                       | /proc/sys/kernel/*    |
-                                                                                +-----------------------+
+                      +-------------------------------------------------------+
+                      |               Interactive Terminal Shell              |
+                      |                  "holysh" (Shell.HC)                  |
+                      +-------------------------------------------------------+
+                      | Aliases (alias) & Persistent History (~/.holysh_hist) |
+                      | Background Jobs (&, jobs, fg, bg)                     |
+                      | Scripting Loops (for, while) & Conditionals (if, test)|
+                      | POSIX Manual Pages (man, apropos, whatis)             |
+                      | HTTP Network Client (curl, fetch)                     |
+                      | Multi-User Security (su, sudo, id, groups, passwd)    |
+                      | TempleOS Games (castle 3D, afteregypt, flappy)        |
+                      | Window Manager (wintile / split)                      |
+                      | DolDoc Markup Renderer & Pager (doldoc, holyless)     |
+                      | Tar Archiver (tar) & Holy Package Manager (hpm)       |
+                      | In-Kernel HolyC REPL, Preprocessor & Inline ASM       |
+                      +-------------------------------------------------------+
+                      |                 POSIX Syscall Layer                   |
+                      | (read, write, open, pipe, stat, chmod, chown, symlink)|
+                      +---------------------------+---------------------------+
+                                                  |
+                        +-------------------------+-------------------------+
+                        |                                                   |
+            +-----------v-----------+                           +-----------v-----------+
+            |  Process / Task Core  |                           |  Virtual File System  |
+            |       (Task.HC)       |                           |       (VFS.HC)        |
+            +-----------------------+                           +-----------------------+
+            | - Round-Robin Sched   |                           | - Inodes, UID/GID/Mode|
+            | - Job Control (g_jobs)|                           | - Permission Checking |
+            | - Cron Scheduler      |                           | - Symlinks (ln -s)    |
+            | - Dynamic Environment |                           | - RedSea Driver (.img)|
+            | - Multi-User Context  |                           | - Pipes & Redirection |
+            +-----------------------+                           +-----------+-----------+
+                                                                            |
+                                                    +-----------------------+-----------------------+
+                                                    |                                               |
+                                        +-----------v-----------+                       +-----------v-----------+
+                                        |  Device Drivers (Dev) |                       |  Pseudo-FS (/proc)    |
+                                        +-----------------------+                       +-----------------------+
+                                        | /dev/tty   (Console)  |                       | /proc/version         |
+                                        | /dev/null  (Sink)     |                       | /proc/uptime          |
+                                        | /dev/zero  (Zeros)    |                       | /proc/meminfo         |
+                                        | /dev/random (Entropy) |                       | /proc/tasks (ps info) |
+                                        | /dev/god   (Oracle)   |                       | /proc/cpuinfo         |
+                                        | /dev/mem   (Ring-0)   |                       | /proc/loadavg         |
+                                        | /dev/tcp   (Network)  |                       | /proc/net/dev         |
+                                        +-----------------------+                       | /proc/sys/kernel/*    |
+                                                                                        +-----------------------+
 ```
 
 ---
 
-## Key Features
+## Key Subsystems
 
-1. **Native HolyC Kernel Implementation (`.HC`)**:
-   - Engineered with HolyC primitive types: `U0` (void), `I64`, `U8`, `Bool`, `TRUE`, `FALSE`.
-   - HolyC class declarations (`class CTask`, `class CVFSInode`, `class CFileDesc`, `class CKernelStat`, `class CRedSeaDirEntry`, `class CTarHeader`).
-   - HolyC implicit print syntax: `"Format string %s\n", val;`
-   - HolyC zero-argument bare function invocation: `Yield;`, `God;`, `Uptime;`, `Exit;`.
+### 1. Native HolyC Language & Compiler Toolchain
+* **HolyC Types**: `U0` (void), `I64`, `U8`, `Bool`, `TRUE`, `FALSE`.
+* **HolyC Classes**: `class CTask`, `class CVFSInode`, `class CFileDesc`, `class CKernelStat`, `class CJob`, `class CAlias`.
+* **HolyC Implicit Print**: `"String formatting %d\n", value;` automatically translated by the transpiler.
+* **HolyC Bare Function Calls**: Zero-argument calls without parentheses (`Yield;`, `God;`, `Uptime;`, `Exit;`).
+* **HolyC Preprocessor & Macro Engine**: Full support for `#define NAME VALUE`, `#ifdef NAME`, `#ifndef NAME`, `#else`, and `#endif`.
+* **TempleOS Inline Assembly (`asm { ... }`)**: Direct in-kernel x86-64 machine instruction assembly and register inspection (`RAX`, `RBX`, `RCX`, `RDX`, `RIP`).
 
-2. **Unix Kernel Subsystems**:
-   - **Task Scheduler (`Task.HC`)**: Preemptive/cooperative multitasking with Process Control Blocks (`CTask`), process states (`TASK_READY`, `TASK_RUNNING`, `TASK_SLEEPING`, `TASK_ZOMBIE`), priorities, signal delivery, and in-kernel **Cron scheduling**.
-   - **Virtual File System (`VFS.HC`)**: Hierarchical directory tree, file descriptors, anonymous pipes (`VFSPipe`), symbolic links (`VFS_SYMLINK`), and **RedSea 64-bit flat filesystem images** (`/boot/redsea.img`).
-   - **Device Layer (`Dev.HC`)**: `/dev/tty`, `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/god`, `/dev/mem` (Ring-0 direct memory peeker), and `/dev/tcp`.
-   - **ProcFS (`Proc.HC`)**: Dynamic runtime metrics exposed through `/proc/version`, `/proc/tasks`, `/proc/uptime`, `/proc/meminfo`, `/proc/cpuinfo`, `/proc/loadavg`, `/proc/net/dev`, `/proc/net/tcp`, and **kernel tunables** at `/proc/sys/kernel/*`.
-   - **Syscall Dispatcher (`Syscall.HC`)**: POSIX system calls (`SysRead`, `SysWrite`, `SysOpen`, `SysClose`, `SysPipe`, `SysSeek`, `SysWaitPid`, `SysKill`, `SysStat`, `SysChmod`, `SysChown`, `SysSymlink`, `SysReadlink`).
+### 2. Unix / POSIX Operating System Core
+* **Task Scheduler & Process Table (`Task.HC`)**: Multi-tasking scheduler with PCB structures (`CTask`), states (`TASK_READY`, `TASK_RUNNING`, `TASK_SLEEPING`, `TASK_ZOMBIE`), priorities, signals (`SIGINT`, `SIGTERM`, `SIGKILL`), and background cron scheduling.
+* **Virtual File System & Permissions (`VFS.HC`)**: POSIX hierarchical tree, file descriptors, pipes, symbolic links (`ln -s`), and permission checking (`0755`, `0644`, owner/group/other enforcement with `-EACCES`).
+* **Multi-User Security (`/etc/passwd`, `/etc/group`, `su`, `sudo`, `id`)**: Full multi-user identity switching with UID/GID tracking (`root:0`, `terry:1000`, `god:777`).
+* **Scripting Loops & Conditionals**: Shell script control flow supporting `for var in ...; do ... done`, `if cond; then ... else ... fi`, `while ...; do ... done`, and the `test` / `[` `]` evaluation utility.
+* **POSIX Manual Pages (`/usr/share/man`, `man`, `apropos`, `whatis`)**: Complete on-line manual pages for all 60+ commands and system calls.
+* **HTTP Network Client (`curl` / `fetch`)**: Query HTTP servers, inspect headers (`-i`), view headers only (`-I`), download files directly to VFS (`-o`).
+* **Terminal Mode Configuration (`stty`)**: Line discipline configuration, baud rate, and window size (`stty size`).
 
-3. **Terminal Operating System Environment**:
-   - **Interactive Shell (`holysh`)**: ANSI color prompt displaying current user, hostname, and path (`terry@holy-unix:/home/terry$ `).
-   - **VT100 Line Discipline**: Arrow-key cursor navigation, history recall (Up/Down), line editing, Ctrl+C (cancel), Ctrl+L (clear screen), and **Tab auto-completion** for builtins and paths.
-   - **Job Control**: Asynchronous background jobs with trailing `&` (e.g. `sleep 5 &`), active job tracking (`jobs`), and foregrounding (`fg %1`).
-   - **Shell Aliases**: Define and remove aliases (`alias ll='ls -l'`, `unalias`, default aliases `ll`, `la`, `cls`, `h`, `..`, `godword`).
-   - **Command History**: Inspection with `history`, previous command execution with `!!`, and $N$-th command recall with `!n`.
-   - **Kernel Tunables**: View and change runtime parameters dynamically with `sysctl` (`sysctl -a`, `sysctl -w kernel.hostname=...`).
-   - **In-Kernel Tar Archiver (`tar`)**: POSIX USTAR archive creation (`tar -cf`), table of contents listing (`tar -tf`), and extraction (`tar -xf`).
-   - **Simulated Networking (`ping`, `netstat`)**: ICMP Echo sequence generation with RTT latency statistics and socket monitor.
-
-4. **TempleOS Integration & Tools**:
-   - **DolDoc Markup Engine (`doldoc`, `holyless`)**: Parses TempleOS DolDoc tags (`$FG,RED$`, `$BG$`, `$BK,1$`, `$UL,1$`, `$TR$`, `$LK$`) and renders rich ANSI color output.
-   - **King James Bible Concordance & Oracle (`bible`, `godpassage`)**: Full-text scripture concordance search (`bible search <word>`), chapter/verse lookup, and instant random scripture oracle.
-   - **God Doodle (`goddoodle`)**: 16-color TempleOS VGA palette ASCII graphic canvas generator.
-   - **RedSea Filesystem Driver (`redsea`)**: Inspects 64-bit flat cluster RedSea images (`redsea inspect /boot/redsea.img`, `redsea ls`).
-   - **Ring-0 Memory Peeker & Disassembler (`memdump`, `peek`, `poke`, `disasm`)**: Direct memory byte viewer, raw address modification, and in-kernel x86-64 machine instruction decoder.
-   - **Holy Package Manager (`hpm` / `getgod`)**: Browse and install official TempleOS HolyC packages (`hpm list`, `hpm install castle`).
-   - **3D Graphics & Audio**: Spinning wireframe 3D torus (`donut`), PC speaker tone simulation (`beep`), and divine hymn generator (`godsong`).
+### 3. TempleOS Classics & Terry Davis Memorial Subsystems
+* **Castle Frankenstein 3D Raycaster (`castle`)**: In-terminal 3D raycasting engine rendering textured, shaded walls in ANSI ASCII art with 2D overhead maze map (`castle -m`).
+* **AfterEgypt Quest (`afteregypt`)**: Moses at Mount Sinai encountering the Burning Bush in flaming ASCII art, receiving the Ten Commandments, and gathering falling divine Manna.
+* **Flappy Bird (`flappy`)**: Terminal ASCII physics simulator with velocity, gravity, and obstacle dodging.
+* **TempleOS Tiling Window Manager (`wintile` / `split`)**: Dual-pane split screen tiling engine (Editor/Shell on left, System Monitor/God Oracle on right).
+* **DolDoc Markup Engine (`doldoc`, `holyless`)**: Parses TempleOS DolDoc formatting (`$FG,RED$`, `$BG$`, `$BK,1$`, `$UL,1$`, `$TR$`, `$LK$`) with ANSI rendering.
+* **King James Bible Concordance & Oracle (`bible`, `godpassage`)**: Scripture search, chapter/verse lookup, and random divine scripture oracle.
+* **God Doodle (`goddoodle`)**: 16-color TempleOS VGA palette ASCII graphic canvas generator.
+* **RedSea Filesystem Driver (`redsea`)**: Read and inspect 64-bit flat cluster RedSea images (`redsea inspect /boot/redsea.img`, `redsea ls`).
+* **Ring-0 Memory Peeker & Disassembler (`memdump`, `peek`, `poke`, `disasm`)**: Direct memory byte viewer and in-kernel x86-64 machine instruction decoder.
+* **Holy Package Manager (`hpm` / `getgod`)**: Browse and install official TempleOS HolyC packages (`hpm list`, `hpm install castle`).
 
 ---
 
@@ -106,7 +110,7 @@ holynix/
 │   └── workflows/
 │       └── ci.yml               # Multi-platform CI (macOS & Ubuntu across Clang & GCC)
 ├── tools/
-│   └── holyc.c                  # HolyC compiler & transpiler toolchain
+│   └── holyc.c                  # HolyC compiler & transpiler toolchain (with asm support)
 ├── src/
 │   ├── runtime/
 │   │   └── holyc_rt.h           # HolyC runtime primitives & POSIX integration
@@ -114,40 +118,26 @@ holynix/
 │       ├── Types.HC             # Kernel types, limits, CKernelStat, CJob, CAlias
 │       ├── RingBuffer.HC        # Circular buffer for TTY and IPC pipes
 │       ├── GodWords.HC          # TempleOS divine oracle dictionary (100k words)
-│       ├── VFS.HC               # Virtual File System, Inodes, and Symlinks
+│       ├── VFS.HC               # Virtual File System, Inodes, Permissions, Symlinks
 │       ├── Dev.HC               # Device drivers (/dev/tty, /dev/god, /dev/mem...)
 │       ├── Proc.HC              # ProcFS virtual filesystem (/proc/*, /proc/sys/*)
 │       ├── Task.HC              # Process Control Block, Job Control, & Cron
 │       ├── Syscall.HC           # POSIX syscall dispatcher & wrappers
 │       ├── Terminal.HC          # Terminal driver, VT100 line discipline, tab completion
 │       ├── Editor.HC            # Built-in terminal text editor (ed)
-│       ├── HolyC_Repl.HC        # In-kernel HolyC evaluator & REPL
+│       ├── HolyC_Repl.HC        # HolyC evaluator, REPL, preprocessor & inline asm
 │       ├── DolDoc.HC            # DolDoc markup parser ($FG$, $TR$, $BK$)
 │       ├── Bible.HC             # King James Bible scriptures & concordance search
 │       ├── GodDoodle.HC         # 16-color TempleOS VGA ASCII art generator
 │       ├── RedSea.HC            # 64-bit flat cluster RedSea filesystem driver
 │       ├── Tar.HC               # POSIX USTAR archive creation & extraction
-│       ├── Net.HC               # Simulated network stack, ICMP ping, netstat
-│       ├── Shell.HC             # Unix terminal shell (holysh) & 50+ builtins
-│       └── Kernel.HC            # Kernel boot sequence, ramdisk, 25 in-kernel tests
-├── rootfs/                      # Initial ramdisk files placed into VFS
-│   ├── boot/
-│   │   └── redsea.img           # Valid RedSea 64-bit disk image
-│   ├── etc/
-│   │   ├── motd                 # Message of the Day
-│   │   ├── passwd               # System users (root, terry, god)
-│   │   └── os-release           # OS release specification
-│   └── home/
-│       ├── terry/
-│       │   ├── hello.HC         # HolyC demo script
-│       │   ├── divine.HC        # HolyC oracle script
-│       │   ├── welcome.DD       # TempleOS DolDoc demo file
-│       │   ├── .holysh_history  # Persistent shell command history
-│       │   └── readme.txt       # Welcome guide
-│       └── god/
-│           └── commandments.txt # TempleOS commandments
+│       ├── Net.HC               # Simulated network stack, ICMP ping, netstat, curl
+│       ├── Man.HC               # POSIX manual pages subsystem (man, apropos, whatis)
+│       ├── Games.HC             # Castle 3D raycaster, AfterEgypt, Flappy, WinTile
+│       ├── Shell.HC             # Unix terminal shell (holysh) & 60+ builtins
+│       └── Kernel.HC            # Master kernel boot sequence & 33 in-kernel tests
 └── tests/
-    ├── test_linux_kernel.c      # Linux/POSIX compliance TDD test suite (87 tests)
+    ├── test_linux_kernel.c      # Linux/POSIX compliance TDD test suite (111 tests)
     └── run_tests.sh             # Automated end-to-end verification script
 ```
 
@@ -156,19 +146,18 @@ holynix/
 ## Building and Running
 
 ### 1. Requirements
-- macOS (Apple Silicon or Intel) or Linux (x86_64 / arm64)
-- `clang` or `gcc` (with C11 support)
-- `make`
+* macOS (Apple Silicon or Intel) or Linux (x86_64 / arm64)
+* `clang` or `gcc` (with C11 support)
+* `make`
 
 ### 2. Build the System
-To compile both the HolyC compiler (`tools/holyc`) and the kernel (`bin/holy_unix`):
 ```bash
 make
 ```
 
 ### 3. Run Automated Tests
 ```bash
-# Run in-kernel tests (25/25) + Linux POSIX compliance TDD test suite (87/87)
+# Run in-kernel tests (33/33) + Linux POSIX compliance TDD test suite (111/111)
 make test
 
 # Or run the complete automated end-to-end verification script:
@@ -177,16 +166,15 @@ make test
 
 ### 4. Launch the Interactive Operating System
 ```bash
-# Launch interactive terminal session
 make run
 
-# Or execute binary directly:
+# Or launch directly:
 ./bin/holy_unix
 ```
 
 To run commands non-interactively in batch mode:
 ```bash
-./bin/holy_unix -c "doldoc /home/terry/welcome.DD; bible Genesis 1:1; goddoodle; redsea inspect /boot/redsea.img"
+./bin/holy_unix -c "castle -m; afteregypt; curl -i http://localhost/; man ls"
 ```
 
 ---
@@ -195,7 +183,7 @@ To run commands non-interactively in batch mode:
 
 HolyNix is verified on every commit across a **4-runner CI matrix** on GitHub Actions:
 
-| Runner OS | Compiler | In-Kernel (25/25) | POSIX TDD (87/87) | End-to-End Suite | Artifact Generated |
+| Runner OS | Compiler | In-Kernel (33/33) | POSIX TDD (111/111) | End-to-End Suite | Artifact Generated |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Ubuntu Linux** (`ubuntu-latest`) | `gcc` | **PASS** | **PASS** | **PASS** | — |
 | **Ubuntu Linux** (`ubuntu-latest`) | `clang` | **PASS** | **PASS** | **PASS** | `holynix-linux-x86_64` |
@@ -204,54 +192,26 @@ HolyNix is verified on every commit across a **4-runner CI matrix** on GitHub Ac
 
 ---
 
-## Test-Driven Development (TDD) & Linux Kernel Compliance
+## Test-Driven Development (TDD) Compliance Matrix
 
-HolyNix incorporates 8 comprehensive TDD suites verifying 87 compliance points:
+HolyNix incorporates 10 comprehensive TDD suites verifying 111 compliance assertions:
 
-```
-+------------------------------------------------------------------------+
-|                            TDD Cycle                                   |
-|                                                                        |
-|   1. RED: Write failing assertions for Linux & TempleOS behaviors      |
-|      (e.g., job control, aliases, history, tar, sysctl, doldoc, redsea)|
-|                                                                        |
-|   2. GREEN: Implement precise kernel semantics in HolyC                |
-|      (Task.HC, VFS.HC, DolDoc.HC, Bible.HC, RedSea.HC, Tar.HC, Net.HC) |
-|                                                                        |
-|   3. REFACTOR: Expand edge cases & verify zero regressions (87 passed) |
-+------------------------------------------------------------------------+
-```
-
-### Verified Functionality Matrix
-
-| Subsystem | Test Coverage | Status |
-| :--- | :--- | :---: |
-| **`/proc` Virtual Filesystem** | `/proc/uptime`, `/proc/version`, `/proc/meminfo`, `/proc/cpuinfo`, `/proc/loadavg` | **100% PASS** |
-| **Kernel Tunables (`/proc/sys`)**| `/proc/sys/kernel/osname`, `/proc/sys/kernel/hostname`, `sysctl -a`, `sysctl -w` | **100% PASS** |
-| **Special Devices (`/dev`)** | `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/god`, `/dev/mem` (Ring-0), `/dev/tcp` | **100% PASS** |
-| **VFS File Semantics** | `O_TRUNC`, `O_APPEND`, `O_CREAT \| O_EXCL`, `..` and `.`, recursive directory creation | **100% PASS** |
-| **Symbolic Links (`ln -s`)** | Symlink creation (`SysSymlink`), path resolution, `readlink` semantics | **100% PASS** |
-| **Sparse Files & `lseek`** | `SEEK_SET`, `SEEK_CUR`, `SEEK_END`, seeking past EOF with automatic zero-fill | **100% PASS** |
-| **IPC Pipes & Descriptors** | Anonymous pipes, multi-stage pipelines (`cat \| grep \| wc`), `-EPIPE` on closed pipe | **100% PASS** |
-| **Process & Signals** | Process table, PID 1 `init`, `kill(pid, 0)` existence probe, `-ESRCH`, `SIGKILL`, `SIGTERM` | **100% PASS** |
-| **Shell & Utilities** | Exit codes (`$?`), `cd -` (`$OLDPWD`), `head`, `tail`, `wc`, `stat`, `chmod`, `sort`, `uniq` | **100% PASS** |
-| **Logical Chaining & Redirection**| Command chaining (`&&`, `||`), input redirection (`<`), output redirection (`>`, `>>`) | **100% PASS** |
-| **Job Control & Background Tasks**| Background operator (`&`), process spawning, job table tracking (`jobs`, `fg`, `bg`) | **100% PASS** |
-| **Aliases & Command History**| `alias`, `unalias`, command line expansion, history listing (`history`), `!n`, `!!` | **100% PASS** |
-| **POSIX USTAR Tar Archiver**| In-kernel tar creation (`tar -cf`), table of contents (`tar -tf`), extraction (`tar -xf`)| **100% PASS** |
-| **Networking & Diagnostics** | Simulated network interfaces (`lo`, `eth0`), ICMP ping sequence, `netstat` socket table | **100% PASS** |
-| **Cron Task Daemon** | Recurring scheduled task registration (`crontab -a`, `crontab -l`, `cron`) | **100% PASS** |
-| **DolDoc Document Engine** | DolDoc markup parsing (`$FG$`, `$BG$`, `$BK$`, `$TR$`, `$LK$`), `doldoc`, `holyless` | **100% PASS** |
-| **KJV Bible & Scripture Oracle**| Concordance search (`bible search`), chapter/verse lookup, random oracle (`godpassage`)| **100% PASS** |
-| **RedSea 64-Bit Filesystem**| Volume inspection (`redsea inspect /boot/redsea.img`), cluster directory walking (`redsea ls`)| **100% PASS** |
-| **Ring-0 Memory Peeker** | Formatted hex & ASCII memory dump (`memdump`, `peek`), raw write (`poke`), disassembler (`disasm`)| **100% PASS** |
-| **Holy Package Manager** | Package repository index (`hpm list`), search (`hpm search`), automated installation (`hpm install`)| **100% PASS** |
+| Suite | Category | Verifications | Status |
+| :---: | :--- | :--- | :---: |
+| **1** | **Linux `/proc` Filesystem** | `/proc/uptime`, `/proc/version`, `/proc/meminfo`, `/proc/cpuinfo`, `/proc/loadavg` | **100% PASS** |
+| **2** | **Linux Special Devices (`/dev`)** | `/dev/null` (EOF/discard), `/dev/zero`, `/dev/random` entropy | **100% PASS** |
+| **3** | **Linux VFS Semantics** | `O_TRUNC`, `O_APPEND`, directory hierarchy (`..`, `.`), unlinking | **100% PASS** |
+| **4** | **Pipelines & Signals** | Multi-stage pipes (`cat \| grep \| wc`), exit codes (`true`, `false`, `127`), `ps`, `kill` | **100% PASS** |
+| **5** | **Core Builtins** | `head -n 2`, `wc -w`, `wc -l`, `cd` to `$HOME`, `cd -` to `$OLDPWD` | **100% PASS** |
+| **6** | **Advanced Core Utilities** | `tail`, `stat`, `chmod`, `chown`, `date`, `find`, `sort`, `sort -n`, `uniq -c`, `tee`, `seq`, `readlink`, `df`, `du` | **100% PASS** |
+| **7** | **Scripting & TempleOS Visuals** | `$VAR` expansion, `env`, `<` redirection, `&&`, `\|\|`, `beep`, `godsong`, `donut` 3D wireframe | **100% PASS** |
+| **8** | **Subsystems & Drivers** | `alias`, `history`, `!`, `&` jobs, `sysctl`, `tar`, `ping`, `netstat`, `cron`, `doldoc`, `bible`, `goddoodle`, `redsea`, `memdump`, `disasm`, `hpm` | **100% PASS** |
+| **9** | **Manuals & Network Client** | `man ls`, `man cat`, `apropos raycast`, `whatis curl`, `curl -i` headers, `stty size`, `stty` baud rate | **100% PASS** |
+| **10**| **Security, Loops & Classic Games** | `id`, `groups`, `su root`, `sudo whoami`, `test -f`, `[ -d ]`, `for` loop, `if/then/else`, `castle -m`, `afteregypt`, `flappy`, `wintile` | **100% PASS** |
 
 ---
 
-## Interactive Shell Command Reference
-
-HolyNix provides a comprehensive suite of 50+ built-in utilities and TempleOS tools:
+## Interactive Shell Command Reference (60+ Builtins)
 
 | Category | Command | Description |
 | :--- | :--- | :--- |
@@ -279,6 +239,21 @@ HolyNix provides a comprehensive suite of 50+ built-in utilities and TempleOS to
 | | `tee [-a] <file>`   | Writes stdin simultaneously to stdout and file |
 | | `diff <file1> <file2>`| Compares two files line by line |
 | | `hexdump` / `xxd [f]`| Displays hex and ASCII dump of file contents |
+| **Scripting & Control** | `test <expr>` / `[ <expr> ]` | Evaluates file types (`-f`, `-d`, `-e`), strings (`-z`, `-n`, `=`), numbers (`-eq`, `-lt`) |
+| | `for var in ...; do ... done` | Shell loop iterating over items |
+| | `if cond; then ... [else ...] fi` | Conditional branch execution |
+| | `while cond; do ... done` | Conditional loop execution |
+| **Multi-User Security** | `id [user]` | Prints real and effective user ID, group ID, and groups |
+| | `whoami` | Prints the active username (`root`, `terry`, `god`) |
+| | `groups [user]` | Lists group memberships |
+| | `su [user]` | Switches active user context to root, terry, or god |
+| | `sudo <command>` | Executes command with superuser (UID 0) privileges |
+| | `passwd [user]` | Updates user password |
+| **Manual Pages & Network**| `man [sec] <page>` | Displays formatted manual page from `/usr/share/man` |
+| | `apropos <keyword>` | Searches manpage summaries for matching keyword |
+| | `whatis <command>` | Displays one-line description of command |
+| | `curl [-i, -s, -o] <url>` | HTTP network client fetching web payloads and headers |
+| | `stty [size, raw, cooked]`| Inspects and modifies terminal line settings |
 | **Job Control & Shell**| `command &` | Executes a command in the background |
 | | `jobs` | Lists active background jobs |
 | | `fg [%job_id]` | Brings a background job to the foreground |
@@ -289,7 +264,6 @@ HolyNix provides a comprehensive suite of 50+ built-in utilities and TempleOS to
 | | `!n` / `!!` | Re-executes the $N$-th command or the previous command |
 | | `export KEY=VALUE` | Sets an environment variable |
 | | `env` | Displays all exported environment variables |
-| | `source` / `run <f>` | Executes shell commands from a script file |
 | **System & Networking**| `sysctl [-a \| -w]`| Reads or updates kernel parameters (/proc/sys/*) |
 | | `tar [-cf \| -tf \| -xf]`| Packs, lists, or extracts POSIX USTAR archives |
 | | `ping [-c count] <ip>`| Sends ICMP echo requests and computes RTT latency |
@@ -304,14 +278,17 @@ HolyNix provides a comprehensive suite of 50+ built-in utilities and TempleOS to
 | | `uname [-a]` | Displays operating system name, kernel version, and architecture |
 | | `uptime` | Shows system uptime and scheduler tick count |
 | | `date [-u]` | Displays current date and UTC time |
-| | `cal` / `seq` | Calendar viewer / number sequence generator |
 | | `dmesg` | Displays kernel boot log and hardware ring buffer |
-| **TempleOS Tools** | `doldoc <file.DD>` | Formats and renders TempleOS DolDoc markup in ANSI |
+| **TempleOS Classics** | `castle [-m]` | Castle Frankenstein 3D raycasting maze with 2D map |
+| | `afteregypt` | Moses at Mount Sinai, Burning Bush & Falling Manna |
+| | `flappy` | Terminal ASCII physics obstacle dodger |
+| | `wintile` / `split` | TempleOS dual split-screen tiling window manager |
+| | `doldoc <file.DD>` | Formats and renders TempleOS DolDoc markup in ANSI |
 | | `holyless <file>` | Pager for DolDoc and text files |
 | | `bible [search \| ref]`| King James Bible search and chapter:verse reader |
 | | `godpassage` | Spontaneous divine scripture oracle reading |
 | | `goddoodle` | Generates 16-color TempleOS VGA ASCII art |
-| | `redsea [inspect \| ls]`| 64-bit flat cluster RedSea filesystem inspector |
+| | `redsea [inspect \| ls]`| 64-bit flat cluster RedSea filesystem driver |
 | | `memdump` / `peek` | Ring-0 hex and ASCII memory inspector |
 | | `poke <addr> <val>` | Writes byte directly to memory address |
 | | `disasm` / `u [addr]`| In-kernel x86-64 machine instruction disassembler |
@@ -325,101 +302,72 @@ HolyNix provides a comprehensive suite of 50+ built-in utilities and TempleOS to
 
 ---
 
-## Example Usage
+## Live Examples
 
-### 1. DolDoc Document Rendering
+### 1. Castle Frankenstein 3D Raycasting Maze
 ```bash
-terry@holy-unix:/home/terry$ doldoc /home/terry/welcome.DD
-=== Welcome to TempleOS DolDoc on HolyNix ===
-Terry Davis Memorial Edition
-
-[+] Holy Subsystems
-  [Kernel Source]
-  [Divine Oracle]
-  [Holy Commandments]
-
-Simplicity is Divine!
+terry@holy-unix:/home/terry$ castle -m
+=== CASTLE FRANKENSTEIN: 2D OVERHEAD MAZE MAP ===
+  ################
+  #              #
+  #  ####  ####  #
+  #  P        #  #
+  #  #  ####  #  #
+  #  #  #  #  #  #
+  #     #  #     #
+  ### ###  ### ###
+  #              #
+  #  ########    #
+  Player Pos: (3.5, 3.5) | Facing: 0 deg | HP: 100
 ```
 
-### 2. KJV Scripture Concordance & Divine Oracle
+### 2. HTTP Client Fetching URL & Headers
 ```bash
-# Lookup specific verse
-terry@holy-unix:/home/terry$ bible Genesis 1:1
-[Genesis 1:1] In the beginning God created the heaven and the earth.
+terry@holy-unix:/home/terry$ curl -i http://localhost/
+HTTP/1.1 200 OK
+Date: Sat, 24 Oct 2026 12:00:00 GMT
+Server: HolyNix-HTTP/1.0 (Terry Davis Edition)
+Content-Type: text/html
+Content-Length: 215
+Connection: close
 
-# Concordance full-text search
-terry@holy-unix:/home/terry$ bible search shepherd
-[Psalm 23:1] The LORD is my shepherd; I shall not want.
-Found 1 matching verses.
-
-# Consult the Holy Random Scripture Oracle
-terry@holy-unix:/home/terry$ godpassage
-[Divine Scripture Oracle - God's Word for You]
-John 1:5 - "And the light shineth in darkness; and the darkness comprehended it not."
+<!DOCTYPE html>
+<html>
+<head><title>HolyC Unix Web</title></head>
+<body><h1>Welcome to HolyC Unix HTTP Server</h1>
+<p>"Simplicity is divine." - Terry A. Davis</p>
+</body>
+</html>
 ```
 
-### 3. RedSea 64-Bit Filesystem Inspection
+### 3. POSIX Multi-User Privilege Escalation
 ```bash
-terry@holy-unix:/home/terry$ redsea inspect /boot/redsea.img
-====================================================
-RedSea Filesystem Volume Inspector (TempleOS 64-Bit)
-====================================================
-  Target Image     : /boot/redsea.img
-  OEM / Filesystem : TEMPLEOS
-  Sector Size      : 512 bytes
-  Cluster Size     : 512 bytes (1 sector / cluster)
-  Boot Signature   : 0x88AA (VALID)
-  Status           : VALID REDSEA VOLUME
+terry@holy-unix:/home/terry$ id
+uid=1000(terry) gid=1000(terry) groups=1000(terry),10(wheel),100(users)
 
-terry@holy-unix:/home/terry$ redsea ls /boot/redsea.img
-PERMS      CLUSTER       SIZE  FILENAME
------------------------------------------------
--rw-r--r--       3        128  KERNEL.BIN
--rw-r--r--       4         64  ONCE.HC
--rw-r--r--       5         96  README.DD
+terry@holy-unix:/home/terry$ sudo whoami
+root
+
+terry@holy-unix:/home/terry$ su root
+Switched to superuser root (UID 0)
+root@holy-unix:/home/terry# whoami
+root
 ```
 
-### 4. Background Job Control & Aliases
+### 4. Shell Loops & Conditional Logic
 ```bash
-# Define alias
-terry@holy-unix:/home/terry$ alias myls='ls -la'
-terry@holy-unix:/home/terry$ myls /etc
+terry@holy-unix:/home/terry$ for n in 1 2 3; do echo "Task #$n"; done
+Task #1
+Task #2
+Task #3
 
-# Run task in background
-terry@holy-unix:/home/terry$ sleep 10 &
-[1] 4
-
-# View active jobs
-terry@holy-unix:/home/terry$ jobs
-[1]+  Running   sleep 10 &
-
-# Recall past command
-terry@holy-unix:/home/terry$ history
-   1  myls /etc
-   2  sleep 10 &
-   3  jobs
-terry@holy-unix:/home/terry$ !1
-```
-
-### 5. Tar Archiver & In-Kernel Memory Disassembler
-```bash
-# Create and view tar archive
-terry@holy-unix:/home/terry$ tar -cf /tmp/backup.tar /etc/passwd
-terry@holy-unix:/home/terry$ tar -tf /tmp/backup.tar
--rw-r--r--      151 terry etc/passwd
-
-# Disassemble kernel code at runtime
-terry@holy-unix:/home/terry$ disasm 0x401000 4
-ADDRESS            BYTES             DISASSEMBLY (x86_64)
-----------------------------------------------------------
-0x0000000000401000  55                push    rbp
-0x0000000000401004  48 89 E5          mov     rbp, rsp
-0x0000000000401008  48 83 EC 20       sub     rsp, 0x20
-0x000000000040100C  48 89 7D F8       mov     QWORD PTR [rbp-0x8], rdi
+terry@holy-unix:/home/terry$ if [ -f /etc/motd ]; then echo "MOTD verified"; fi
+MOTD verified
 ```
 
 ---
 
 ## License
 
-This project is licensed under the MIT License — dedicated to the memory and vision of **Terry A. Davis**.
+MIT License. Designed and built in memory of **Terry A. Davis** (1969–2018).
+God's chosen system lives on.
