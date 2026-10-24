@@ -66,3 +66,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: holynix-linux-x86_64
+          path: bin/holy_unix
+          if-no-files-found: error
