@@ -123,6 +123,15 @@
 #define STDERR_FILENO      2
 
 /* Kernel Stat Structure */
+#ifdef st_atime
+#undef st_atime
+#endif
+#ifdef st_mtime
+#undef st_mtime
+#endif
+#ifdef st_ctime
+#undef st_ctime
+#endif
 class CKernelStat {
     I64 st_dev;
     I64 st_ino;

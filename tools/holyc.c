@@ -584,14 +584,17 @@ int main(int argc, char **argv) {
     unlink(tmp_c_path);
 
     if (compile_res != 0) {
-        fprintf(stderr, "HolyC Compilation failed (exit code %d).\n", compile_res);
-        return compile_res;
+        int code = WEXITSTATUS(compile_res);
+        if (code == 0) code = 1;
+        fprintf(stderr, "HolyC Compilation failed (exit code %d).\n", code);
+        return code;
     }
 
     if (flag_run) {
         int run_res = system(target_out);
         unlink(target_out);
-        return run_res;
+        int code = WEXITSTATUS(run_res);
+        return code;
     }
 
     return 0;

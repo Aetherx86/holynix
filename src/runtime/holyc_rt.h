@@ -36,6 +36,17 @@
 #include <termios.h>
 #include <signal.h>
 
+/* Undefine glibc stat time macros so they do not conflict with HolyC struct fields */
+#ifdef st_atime
+#undef st_atime
+#endif
+#ifdef st_mtime
+#undef st_mtime
+#endif
+#ifdef st_ctime
+#undef st_ctime
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
