@@ -30,6 +30,7 @@
 #define VFS_CHARDEV        3
 #define VFS_PIPE           4
 #define VFS_PROC           5
+#define VFS_SYMLINK        6
 
 /* File Open Flags */
 #ifndef O_RDONLY
@@ -110,11 +111,31 @@
 #define SYS_GETCWD         19
 #define SYS_DUP2           20
 #define SYS_YIELD          21
+#define SYS_CHMOD          22
+#define SYS_CHOWN          23
+#define SYS_SYMLINK        24
+#define SYS_READLINK       25
+#define SYS_STAT_INODE     26
 
 /* Standard File Descriptors */
 #define STDIN_FILENO       0
 #define STDOUT_FILENO      1
 #define STDERR_FILENO      2
+
+/* Kernel Stat Structure */
+class CKernelStat {
+    I64 st_dev;
+    I64 st_ino;
+    I64 st_mode;
+    I64 st_nlink;
+    I64 st_uid;
+    I64 st_gid;
+    I64 st_rdev;
+    I64 st_size;
+    I64 st_atime;
+    I64 st_mtime;
+    I64 st_ctime;
+};
 
 /* Forward Declarations of Kernel Structures */
 class CVFSInode;

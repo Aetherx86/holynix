@@ -242,6 +242,115 @@ static void test_linux_shell_builtins(void) {
     ASSERT_STR_CONTAINS(out, "/etc", "cd - navigates to previous directory ($OLDPWD)");
 }
 
+/* =========================================================================
+ * 6. Linux Advanced Core Utilities (tail, stat, chmod, chown, date, find, etc.)
+ * ========================================================================= */
+static void test_linux_advanced_utilities(void) {
+    printf(COLOR_CYAN "\n=== [TDD Suite 6] Linux Advanced Core Utilities ===" COLOR_RESET "\n");
+    char out[4096];
+
+    /* 6.1 tail -n <lines> */
+    exec_holy_unix("cat /etc/passwd | tail -n 2 | wc -l", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "2", "tail -n 2 outputs exactly 2 lines");
+
+    /* 6.2 stat detailed inode metadata */
+    exec_holy_unix("stat /etc/passwd", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "Size:", "stat displays file size");
+    ASSERT_STR_CONTAINS(out, "Inode:", "stat displays inode number");
+    ASSERT_STR_CONTAINS(out, "Access:", "stat displays file permissions");
+
+    /* 6.3 chmod octal permissions */
+    exec_holy_unix("chmod 755 /etc/passwd; stat /etc/passwd", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "0755", "chmod 755 updates permission bits to 0755");
+
+    /* 6.4 chown uid:gid ownership */
+    exec_holy_unix("chown 1000:1000 /etc/passwd; stat /etc/passwd", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "1000", "chown updates UID and GID");
+
+    /* 6.5 date formatted timestamp */
+    exec_holy_unix("date", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "UTC", "date displays UTC time string");
+
+    /* 6.6 find recursive directory search */
+    exec_holy_unix("find /etc -name passwd", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "/etc/passwd", "find locates file in directory hierarchy");
+
+    /* 6.7 sort alphabetical and numeric */
+    exec_holy_unix("echo banana > /tmp/sort.txt; echo apple >> /tmp/sort.txt; echo cherry >> /tmp/sort.txt; sort /tmp/sort.txt | head -n 1", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "apple", "sort orders lines alphabetically");
+
+    exec_holy_unix("echo 10 > /tmp/nums.txt; echo 2 >> /tmp/nums.txt; echo 5 >> /tmp/nums.txt; sort -n /tmp/nums.txt | head -n 1", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "2", "sort -n orders lines numerically");
+
+    /* 6.8 uniq duplicate filtering and counting */
+    exec_holy_unix("echo a > /tmp/uniq.txt; echo a >> /tmp/uniq.txt; echo b >> /tmp/uniq.txt; uniq -c /tmp/uniq.txt", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "2 a", "uniq -c reports duplicate line counts");
+
+    /* 6.9 tee split stream */
+    exec_holy_unix("echo TeeMessage | tee /tmp/tee_copy.txt; cat /tmp/tee_copy.txt", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "TeeMessage", "tee writes to file and stdout simultaneously");
+
+    /* 6.10 seq number generator */
+    exec_holy_unix("seq 1 3", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "1\n2\n3", "seq generates sequence of numbers");
+
+    /* 6.11 ln -s and readlink */
+    exec_holy_unix("ln -s /etc/motd /tmp/symlink_test; readlink /tmp/symlink_test", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "/etc/motd", "readlink prints target of symbolic link");
+
+    /* 6.12 df and du */
+    exec_holy_unix("df", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "holyfs", "df reports VFS filesystem disk statistics");
+
+    exec_holy_unix("du /etc/passwd", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "/etc/passwd", "du reports file disk space usage");
+}
+
+/* =========================================================================
+ * 7. Linux Shell Scripting, Logical Operators & TempleOS Features
+ * ========================================================================= */
+static void test_linux_scripting_and_templeos(void) {
+    printf(COLOR_CYAN "\n=== [TDD Suite 7] Shell Scripting, Logical Operators & TempleOS ===" COLOR_RESET "\n");
+    char out[4096];
+
+    /* 7.1 Environment Variables export & $VAR expansion */
+    exec_holy_unix("export GREETING=HolyWorld; echo $GREETING", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "HolyWorld", "export sets variable and echo $VAR expands it");
+
+    exec_holy_unix("env", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "USER=terry", "env displays exported environment variables");
+
+    /* 7.2 Input Redirection (<) */
+    exec_holy_unix("wc -l < /etc/passwd", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "3", "input redirection (<) feeds file to command");
+
+    /* 7.3 Logical AND (&&) */
+    exec_holy_unix("true && echo AND_PASSED", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "AND_PASSED", "true && cmd executes right side");
+
+    exec_holy_unix("false && echo AND_FAILED", out, sizeof(out));
+    ASSERT_STR_NOT_CONTAINS(out, "AND_FAILED", "false && cmd short-circuits and skips");
+
+    /* 7.4 Logical OR (||) */
+    exec_holy_unix("false || echo OR_PASSED", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "OR_PASSED", "false || cmd executes fallback");
+
+    exec_holy_unix("true || echo OR_FAILED", out, sizeof(out));
+    ASSERT_STR_NOT_CONTAINS(out, "OR_FAILED", "true || cmd skips fallback");
+
+    /* 7.5 TempleOS PC Speaker beep */
+    exec_holy_unix("beep 800 100", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "800 Hz", "beep executes PC speaker tone simulation");
+
+    /* 7.6 TempleOS Divine GodSong */
+    exec_holy_unix("godsong", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "TempleOS Divine GodSong", "godsong generates divine melody & lyrics");
+
+    /* 7.7 TempleOS 3D Donut / Cube */
+    exec_holy_unix("donut", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "3D Divine Cube", "donut renders 3D ASCII wireframe");
+}
+
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
     printf(COLOR_YELLOW "========================================================\n");
@@ -253,6 +362,8 @@ int main(int argc, char **argv) {
     test_linux_vfs_semantics();
     test_linux_pipeline_and_signals();
     test_linux_shell_builtins();
+    test_linux_advanced_utilities();
+    test_linux_scripting_and_templeos();
 
     printf("\n" COLOR_YELLOW "========================================================\n");
     printf("  TDD Test Results: " COLOR_GREEN "%d Passed" COLOR_RESET ", "

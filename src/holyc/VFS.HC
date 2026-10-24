@@ -12,7 +12,7 @@
 class CVFSInode {
     I64 inode_num;
     U8 name[64];
-    I64 type;             /* VFS_REGULAR, VFS_DIRECTORY, VFS_CHARDEV, VFS_PIPE, VFS_PROC */
+    I64 type;             /* VFS_REGULAR, VFS_DIRECTORY, VFS_CHARDEV, VFS_PIPE, VFS_PROC, VFS_SYMLINK */
     I64 size;
     I64 capacity;
     U8 *data;
@@ -24,7 +24,10 @@ class CVFSInode {
     I64 permissions;
     I64 uid;
     I64 gid;
+    I64 atime;
     I64 mtime;
+    I64 ctime;
+    U8 symlink_target[MAX_PATH_LEN];
 };
 
 class CFileDesc {
@@ -56,7 +59,11 @@ I64 VFSAllocInode(const U8 *name, I64 type, I64 parent_num) {
     node->permissions = (type == VFS_DIRECTORY) ? 0755 : 0644;
     node->uid = 0;
     node->gid = 0;
-    node->mtime = GetTimestampMs() / 1000;
+    I64 now_sec = GetTimestampMs() / 1000;
+    node->atime = now_sec;
+    node->mtime = now_sec;
+    node->ctime = now_sec;
+    node->symlink_target[0] = '\0';
     node->size = 0;
     node->capacity = 0;
     node->data = NULL;
@@ -94,7 +101,7 @@ I64 VFSFindChild(CVFSInode *parent, const U8 *name) {
     return -1;
 }
 
-I64 VFSResolvePath(const U8 *path, const U8 *cwd) {
+I64 VFSResolvePathEx(const U8 *path, const U8 *cwd, Bool follow_symlink) {
     if (!path || path[0] == '\0') return -1;
 
     I64 curr_inum = 0; /* root inode is 0 */
@@ -127,11 +134,30 @@ I64 VFSResolvePath(const U8 *path, const U8 *cwd) {
             if (next_inum < 0) {
                 return -1; /* Not found */
             }
+
+            char *next_part = strtok_r(NULL, "/", &saveptr);
+            CVFSInode *next_node = VFSGetInode(next_inum);
+            if (next_node && next_node->type == VFS_SYMLINK) {
+                if (next_part != NULL || follow_symlink) {
+                    I64 resolved_link = VFSResolvePathEx((const U8*)next_node->symlink_target, "/", TRUE);
+                    if (resolved_link < 0) return -1;
+                    curr_inum = resolved_link;
+                    part = next_part;
+                    continue;
+                }
+            }
+
             curr_inum = next_inum;
+            part = next_part;
+        } else {
+            part = strtok_r(NULL, "/", &saveptr);
         }
-        part = strtok_r(NULL, "/", &saveptr);
     }
     return curr_inum;
+}
+
+I64 VFSResolvePath(const U8 *path, const U8 *cwd) {
+    return VFSResolvePathEx(path, cwd, TRUE);
 }
 
 I64 VFSMkdir(const U8 *path, const U8 *cwd) {
@@ -460,6 +486,109 @@ I64 VFSPipe(I64 *pipe_fds) {
 
     pipe_fds[0] = r_fd;
     pipe_fds[1] = w_fd;
+    return 0;
+}
+
+I64 VFSSymlink(const U8 *target, const U8 *linkpath, const U8 *cwd) {
+    if (!target || !linkpath || linkpath[0] == '\0') return -K_EINVAL;
+
+    if (VFSResolvePathEx(linkpath, cwd, FALSE) >= 0) {
+        return -K_EEXIST;
+    }
+
+    U8 full_path[MAX_PATH_LEN];
+    if (linkpath[0] == '/') {
+        StrNCpy(full_path, linkpath, MAX_PATH_LEN - 1);
+    } else {
+        if (!cwd || cwd[0] == '\0') cwd = "/";
+        if (StrCmp(cwd, "/") == 0) {
+            snprintf((char*)full_path, MAX_PATH_LEN, "/%s", (const char*)linkpath);
+        } else {
+            snprintf((char*)full_path, MAX_PATH_LEN, "%s/%s", (const char*)cwd, (const char*)linkpath);
+        }
+    }
+
+    char *last_slash = strrchr((char*)full_path, '/');
+    if (!last_slash) return -K_ENOENT;
+
+    *last_slash = '\0';
+    const char *parent_path = (full_path[0] == '\0') ? "/" : (char*)full_path;
+    const char *link_name = last_slash + 1;
+
+    I64 parent_inum = VFSResolvePath((const U8*)parent_path, "/");
+    if (parent_inum < 0) return -K_ENOENT;
+
+    I64 inum = VFSAllocInode((const U8*)link_name, VFS_SYMLINK, parent_inum);
+    if (inum < 0) return -K_ENFILE;
+
+    CVFSInode *node = VFSGetInode(inum);
+    StrNCpy(node->symlink_target, target, MAX_PATH_LEN - 1);
+    node->size = StrLen(target);
+    node->permissions = 0777;
+    return 0;
+}
+
+I64 VFSReadlink(const U8 *path, const U8 *cwd, U8 *buf, I64 bufsiz) {
+    if (!path || !buf || bufsiz <= 0) return -K_EINVAL;
+    I64 inum = VFSResolvePathEx(path, cwd, FALSE);
+    if (inum < 0) return -K_ENOENT;
+
+    CVFSInode *node = VFSGetInode(inum);
+    if (!node || node->type != VFS_SYMLINK) return -K_EINVAL;
+
+    I64 len = StrLen(node->symlink_target);
+    I64 to_copy = Min(len, bufsiz - 1);
+    MemCpy(buf, node->symlink_target, to_copy);
+    buf[to_copy] = '\0';
+    return to_copy;
+}
+
+I64 VFSChmod(const U8 *path, const U8 *cwd, I64 mode) {
+    I64 inum = VFSResolvePath(path, cwd);
+    if (inum < 0) return -K_ENOENT;
+    CVFSInode *node = VFSGetInode(inum);
+    if (!node) return -K_ENOENT;
+    node->permissions = mode & 07777;
+    node->ctime = GetTimestampMs() / 1000;
+    return 0;
+}
+
+I64 VFSChown(const U8 *path, const U8 *cwd, I64 uid, I64 gid) {
+    I64 inum = VFSResolvePath(path, cwd);
+    if (inum < 0) return -K_ENOENT;
+    CVFSInode *node = VFSGetInode(inum);
+    if (!node) return -K_ENOENT;
+    if (uid >= 0) node->uid = uid;
+    if (gid >= 0) node->gid = gid;
+    node->ctime = GetTimestampMs() / 1000;
+    return 0;
+}
+
+I64 VFSStat(const U8 *path, const U8 *cwd, CKernelStat *st, Bool follow_symlink) {
+    if (!path || !st) return -K_EINVAL;
+    I64 inum = VFSResolvePathEx(path, cwd, follow_symlink);
+    if (inum < 0) return -K_ENOENT;
+
+    CVFSInode *node = VFSGetInode(inum);
+    if (!node) return -K_ENOENT;
+
+    MemSet(st, 0, sizeof(CKernelStat));
+    st->st_dev = 1;
+    st->st_ino = node->inode_num;
+    st->st_mode = node->permissions;
+    if (node->type == VFS_DIRECTORY) st->st_mode |= 0040000;
+    else if (node->type == VFS_SYMLINK) st->st_mode |= 0120000;
+    else if (node->type == VFS_CHARDEV) st->st_mode |= 0020000;
+    else if (node->type == VFS_PIPE) st->st_mode |= 0010000;
+    else st->st_mode |= 0100000;
+
+    st->st_nlink = (node->type == VFS_DIRECTORY) ? (2 + node->num_children) : 1;
+    st->st_uid = node->uid;
+    st->st_gid = node->gid;
+    st->st_size = node->size;
+    st->st_atime = node->atime;
+    st->st_mtime = node->mtime;
+    st->st_ctime = node->ctime;
     return 0;
 }
 

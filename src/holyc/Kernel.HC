@@ -359,6 +359,107 @@ I64 KernelRunTests() {
         Print("\033[91mFAIL (open failed)\033[0m\n");
     }
 
+    /* Test 11: Linux Symbolic Links & readlink */
+    total++;
+    Print("[TEST %lld] Linux Symbolic Links & readlink: ", (long long)total);
+    I64 sym_res = SysSymlink((const U8*)"/etc/motd", (const U8*)"/tmp/motd_link");
+    U8 link_target[64];
+    I64 rl_len = SysReadlink((const U8*)"/tmp/motd_link", link_target, sizeof(link_target));
+    if (sym_res == 0 && rl_len > 0 && StrCmp(link_target, "/etc/motd") == 0) {
+        I64 l_fd = SysOpen((const U8*)"/tmp/motd_link", O_RDONLY);
+        if (l_fd >= 0) {
+            SysClose(l_fd);
+            Print("\033[92mPASS\033[0m\n");
+            passed++;
+        } else {
+            Print("\033[91mFAIL (cannot open symlink target)\033[0m\n");
+        }
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 12: Linux chmod & stat Inode Metadata */
+    total++;
+    Print("[TEST %lld] Linux chmod & stat Inode Metadata: ", (long long)total);
+    SysChmod((const U8*)"/etc/motd", 0755);
+    CKernelStat kst;
+    if (SysStat((const U8*)"/etc/motd", &kst) == 0 && (kst.st_mode & 0777) == 0755 && kst.st_size > 0) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 13: Dynamic Environment Variables */
+    total++;
+    Print("[TEST %lld] Dynamic Environment Variables & $VAR: ", (long long)total);
+    ShellInitEnv();
+    ShellSetEnv("TEST_HOLY_KEY", "DivinePower");
+    const char *eval_val = ShellGetEnv("TEST_HOLY_KEY");
+    if (eval_val && StrCmp((const U8*)eval_val, "DivinePower") == 0) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 14: Input Redirection (<) */
+    total++;
+    Print("[TEST %lld] Input Redirection (<) & Execution: ", (long long)total);
+    I64 test_in_fd = SysOpen((const U8*)"/tmp/in_test.txt", O_CREAT | O_WRONLY | O_TRUNC);
+    if (test_in_fd >= 0) {
+        SysWrite(test_in_fd, (const U8*)"line1\nline2\nline3\n", 18);
+        SysClose(test_in_fd);
+        char cmd_buf[128] = "wc -l < /tmp/in_test.txt > /tmp/wc_out.txt";
+        ShellExecutePipeline(cmd_buf);
+        I64 out_fd = SysOpen((const U8*)"/tmp/wc_out.txt", O_RDONLY);
+        if (out_fd >= 0) {
+            U8 res_b[32];
+            I64 rn = SysRead(out_fd, res_b, sizeof(res_b) - 1);
+            SysClose(out_fd);
+            if (rn > 0) {
+                res_b[rn] = '\0';
+                if (strstr((char*)res_b, "3") != NULL) {
+                    Print("\033[92mPASS\033[0m\n");
+                    passed++;
+                } else {
+                    Print("\033[91mFAIL (unexpected result %s)\033[0m\n", res_b);
+                }
+            } else {
+                Print("\033[91mFAIL (empty output)\033[0m\n");
+            }
+        } else {
+            Print("\033[91mFAIL (cannot open /tmp/wc_out.txt)\033[0m\n");
+        }
+    } else {
+        Print("\033[91mFAIL (cannot create /tmp/in_test.txt)\033[0m\n");
+    }
+
+    /* Test 15: Logical Command Chaining (&&, ||) */
+    total++;
+    Print("[TEST %lld] Logical Command Chaining (&&, ||): ", (long long)total);
+    char logic_cmd[128] = "true && echo success > /tmp/logic_out.txt || echo failure > /tmp/logic_out.txt";
+    ShellRunLogicalLine(logic_cmd);
+    I64 l_out = SysOpen((const U8*)"/tmp/logic_out.txt", O_RDONLY);
+    if (l_out >= 0) {
+        U8 res_l[32];
+        I64 rn = SysRead(l_out, res_l, sizeof(res_l) - 1);
+        SysClose(l_out);
+        if (rn > 0) {
+            res_l[rn] = '\0';
+            if (strstr((char*)res_l, "success") != NULL) {
+                Print("\033[92mPASS\033[0m\n");
+                passed++;
+            } else {
+                Print("\033[91mFAIL\033[0m\n");
+            }
+        } else {
+            Print("\033[91mFAIL\033[0m\n");
+        }
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
     Print("\033[93m====================================================\033[0m\n");
     Print("Test Results: \033[92m%lld Passed\033[0m, \033[91m%lld Failed\033[0m (Total: %lld)\n",
           (long long)passed, (long long)(total - passed), (long long)total);
@@ -370,6 +471,7 @@ I64 KernelRunTests() {
 I32 main(I32 argc, char **argv) {
     Bool test_mode = FALSE;
     const char *batch_cmd = NULL;
+    const char *script_file = NULL;
 
     for (I32 i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--test") == 0) {
@@ -377,12 +479,14 @@ I32 main(I32 argc, char **argv) {
         } else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
             batch_cmd = argv[++i];
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
-            Print("Usage: holy_unix [options]\n"
+            Print("Usage: holy_unix [options] [script.sh / script.HC]\n"
                   "Options:\n"
                   "  --test           Run automated kernel subsystem verification\n"
                   "  -c <command>     Execute shell command non-interactively\n"
                   "  -h, --help       Show help\n");
             return 0;
+        } else if (argv[i][0] != '-') {
+            script_file = argv[i];
         }
     }
 
@@ -393,7 +497,21 @@ I32 main(I32 argc, char **argv) {
         return (I32)KernelRunTests();
     }
 
+    if (script_file) {
+        g_current_pid = 1;
+        CTask *t = TaskGetCurrent();
+        if (t) StrCpy(t->cwd, "/home/terry");
+        const char *ext = strrchr(script_file, '.');
+        if (ext && strcmp(ext, ".HC") == 0) {
+            HolyCRunScript((const U8*)script_file);
+            return 0;
+        } else {
+            return (I32)ShellExecuteScript(script_file);
+        }
+    }
+
     if (batch_cmd) {
+        ShellInitEnv();
         g_current_pid = 1;
         CTask *t = TaskGetCurrent();
         if (t) StrCpy(t->cwd, "/home/terry");
@@ -402,7 +520,7 @@ I32 main(I32 argc, char **argv) {
         char *saveptr = NULL;
         char *part = strtok_r(cmd_copy, ";", &saveptr);
         while (part) {
-            ShellExecutePipeline(part);
+            ShellRunLogicalLine(part);
             part = strtok_r(NULL, ";", &saveptr);
         }
         return 0;

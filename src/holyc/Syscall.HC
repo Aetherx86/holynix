@@ -206,28 +206,69 @@ I64 SysDup2(I64 oldfd, I64 newfd) {
     return newfd;
 }
 
+I64 SysChmod(const U8 *path, I64 mode) {
+    CTask *t = TaskGetCurrent();
+    if (!t || !path) return -K_EINVAL;
+    return VFSChmod(path, t->cwd, mode);
+}
+
+I64 SysChown(const U8 *path, I64 uid, I64 gid) {
+    CTask *t = TaskGetCurrent();
+    if (!t || !path) return -K_EINVAL;
+    return VFSChown(path, t->cwd, uid, gid);
+}
+
+I64 SysSymlink(const U8 *target, const U8 *linkpath) {
+    CTask *t = TaskGetCurrent();
+    if (!t || !target || !linkpath) return -K_EINVAL;
+    return VFSSymlink(target, linkpath, t->cwd);
+}
+
+I64 SysReadlink(const U8 *path, U8 *buf, I64 bufsiz) {
+    CTask *t = TaskGetCurrent();
+    if (!t || !path || !buf) return -K_EINVAL;
+    return VFSReadlink(path, t->cwd, buf, bufsiz);
+}
+
+I64 SysStat(const U8 *path, CKernelStat *st) {
+    CTask *t = TaskGetCurrent();
+    if (!t || !path || !st) return -K_EINVAL;
+    return VFSStat(path, t->cwd, st, TRUE);
+}
+
+I64 SysLStat(const U8 *path, CKernelStat *st) {
+    CTask *t = TaskGetCurrent();
+    if (!t || !path || !st) return -K_EINVAL;
+    return VFSStat(path, t->cwd, st, FALSE);
+}
+
 I64 Syscall(I64 sys_num, I64 a1, I64 a2, I64 a3, I64 a4) {
     (U0)a4;
     switch (sys_num) {
-        case SYS_EXIT:    TaskExit(a1); return 0;
-        case SYS_READ:    return SysRead(a1, (U8*)a2, a3);
-        case SYS_WRITE:   return SysWrite(a1, (const U8*)a2, a3);
-        case SYS_OPEN:    return SysOpen((const U8*)a1, a2);
-        case SYS_CLOSE:   return SysClose(a1);
-        case SYS_WAITPID: return TaskWaitPid(a1, (I64*)a2);
-        case SYS_KILL:    return TaskKill(a1, a2);
-        case SYS_GETPID:  return SysGetPid();
-        case SYS_GETPPID: return SysGetPPid();
-        case SYS_SLEEP:   return SysSleep(a1);
-        case SYS_TIME:    return SysTime();
-        case SYS_PIPE:    return SysPipe((I64*)a1);
-        case SYS_SEEK:    return SysSeek(a1, a2, a3);
-        case SYS_MKDIR:   return SysMkdir((const U8*)a1);
-        case SYS_UNLINK:  return SysUnlink((const U8*)a1);
-        case SYS_CHDIR:   return SysChdir((const U8*)a1);
-        case SYS_GETCWD:  return SysGetCwd((U8*)a1, a2);
-        case SYS_DUP2:    return SysDup2(a1, a2);
-        case SYS_YIELD:   TaskYield(); return 0;
+        case SYS_EXIT:       TaskExit(a1); return 0;
+        case SYS_READ:       return SysRead(a1, (U8*)a2, a3);
+        case SYS_WRITE:      return SysWrite(a1, (const U8*)a2, a3);
+        case SYS_OPEN:       return SysOpen((const U8*)a1, a2);
+        case SYS_CLOSE:      return SysClose(a1);
+        case SYS_WAITPID:    return TaskWaitPid(a1, (I64*)a2);
+        case SYS_KILL:       return TaskKill(a1, a2);
+        case SYS_GETPID:     return SysGetPid();
+        case SYS_GETPPID:    return SysGetPPid();
+        case SYS_SLEEP:      return SysSleep(a1);
+        case SYS_TIME:       return SysTime();
+        case SYS_PIPE:       return SysPipe((I64*)a1);
+        case SYS_SEEK:       return SysSeek(a1, a2, a3);
+        case SYS_MKDIR:      return SysMkdir((const U8*)a1);
+        case SYS_UNLINK:     return SysUnlink((const U8*)a1);
+        case SYS_CHDIR:      return SysChdir((const U8*)a1);
+        case SYS_GETCWD:     return SysGetCwd((U8*)a1, a2);
+        case SYS_DUP2:       return SysDup2(a1, a2);
+        case SYS_CHMOD:      return SysChmod((const U8*)a1, a2);
+        case SYS_CHOWN:      return SysChown((const U8*)a1, a2, a3);
+        case SYS_SYMLINK:    return SysSymlink((const U8*)a1, (const U8*)a2);
+        case SYS_READLINK:   return SysReadlink((const U8*)a1, (U8*)a2, a3);
+        case SYS_STAT_INODE: return SysStat((const U8*)a1, (CKernelStat*)a2);
+        case SYS_YIELD:      TaskYield(); return 0;
         default:
             return -1;
     }
