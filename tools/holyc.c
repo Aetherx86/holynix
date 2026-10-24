@@ -11,7 +11,7 @@
  * - HolyC implicit print statements: "String\n"; -> Print("String\n");
  * - Accurate initializer detection (prevents array initializers { "a", "b" } from being turned into Print)
  * - HolyC paren-less 0-argument function calls: e.g. "Yield;" -> "Yield();"
- * - Built-in runtime inclusion and clang driver invocation.
+ * - Built-in runtime inclusion and clang/gcc driver invocation.
  */
 
 #include <stdio.h>
@@ -22,14 +22,19 @@
 #include <unistd.h>
 #include <time.h>
 #include <libgen.h>
+#include <limits.h>
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 
 #define MAX_INCLUDES 256
 #define MAX_INC_DIRS 16
 
-static char g_included_files[MAX_INCLUDES][512];
+static char g_included_files[MAX_INCLUDES][PATH_MAX];
 static int g_included_count = 0;
 
-static char g_include_search_dirs[MAX_INC_DIRS][512];
+static char g_include_search_dirs[MAX_INC_DIRS][PATH_MAX];
 static int g_include_search_dir_count = 0;
 
 typedef struct {
@@ -107,36 +112,30 @@ static bool is_already_included(const char *path) {
 
 static void mark_included(const char *path) {
     if (g_included_count < MAX_INCLUDES) {
-        strncpy(g_included_files[g_included_count++], path, 511);
+        snprintf(g_included_files[g_included_count++], PATH_MAX, "%s", path);
     }
 }
 
 static char *resolve_include_file(const char *inc_name, const char *current_file_dir) {
-    char candidate[1024];
+    char candidate[PATH_MAX];
 
     /* 1. Try relative to current file directory */
     if (current_file_dir && current_file_dir[0] != '\0') {
         snprintf(candidate, sizeof(candidate), "%s/%s", current_file_dir, inc_name);
-        char real[1024];
-        if (realpath(candidate, real) != NULL) {
-            return strdup(real);
-        }
+        char *real = realpath(candidate, NULL);
+        if (real) return real;
     }
 
     /* 2. Try in include search dirs */
     for (int i = 0; i < g_include_search_dir_count; ++i) {
         snprintf(candidate, sizeof(candidate), "%s/%s", g_include_search_dirs[i], inc_name);
-        char real[1024];
-        if (realpath(candidate, real) != NULL) {
-            return strdup(real);
-        }
+        char *real = realpath(candidate, NULL);
+        if (real) return real;
     }
 
     /* 3. Try direct path */
-    char real[1024];
-    if (realpath(inc_name, real) != NULL) {
-        return strdup(real);
-    }
+    char *real = realpath(inc_name, NULL);
+    if (real) return real;
 
     return NULL;
 }
@@ -203,8 +202,9 @@ static void transpile_file_content(const char *src, const char *curr_dir, Buffer
                                         mark_included(resolved);
                                         char *inc_src = read_entire_file(resolved);
                                         if (inc_src) {
-                                            char resolved_dir[1024];
+                                            char resolved_dir[PATH_MAX];
                                             strncpy(resolved_dir, resolved, sizeof(resolved_dir) - 1);
+                                            resolved_dir[sizeof(resolved_dir) - 1] = '\0';
                                             char *dname = dirname(resolved_dir);
 
                                             buf_append_str(out, "\n/* Begin HolyC Include: ");
@@ -421,13 +421,15 @@ static char *transpile_holyc_file(const char *src_path, const char *rt_header_pa
         buf_append_str(&out, "\"\n\n");
     }
 
-    char src_dir[1024];
+    char src_dir[PATH_MAX];
     strncpy(src_dir, src_path, sizeof(src_dir) - 1);
+    src_dir[sizeof(src_dir) - 1] = '\0';
     char *dname = dirname(src_dir);
 
-    char real_src[1024];
-    if (realpath(src_path, real_src) != NULL) {
+    char *real_src = realpath(src_path, NULL);
+    if (real_src) {
         mark_included(real_src);
+        free(real_src);
     }
 
     transpile_file_content(src_code, dname, &out);
@@ -456,7 +458,7 @@ int main(int argc, char **argv) {
     bool flag_E = false;
     bool flag_c = false;
     bool flag_run = false;
-    char inc_dirs[1024] = "";
+    char inc_dirs[4096] = "";
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
@@ -472,20 +474,20 @@ int main(int argc, char **argv) {
             strcat(inc_dirs, " -I");
             strcat(inc_dirs, idir);
             if (g_include_search_dir_count < MAX_INC_DIRS) {
-                strncpy(g_include_search_dirs[g_include_search_dir_count++], idir, 511);
+                snprintf(g_include_search_dirs[g_include_search_dir_count++], PATH_MAX, "%s", idir);
             }
         } else if (strncmp(argv[i], "-I", 2) == 0) {
             const char *idir = argv[i] + 2;
             strcat(inc_dirs, " ");
             strcat(inc_dirs, argv[i]);
             if (g_include_search_dir_count < MAX_INC_DIRS) {
-                strncpy(g_include_search_dirs[g_include_search_dir_count++], idir, 511);
+                snprintf(g_include_search_dirs[g_include_search_dir_count++], PATH_MAX, "%s", idir);
             }
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             print_usage(argv[0]);
             return 0;
         } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
-            printf("HolyC Compiler v1.0 (Darwin arm64) - Designed for TerryDavis OS\n");
+            printf("HolyC Compiler v1.0 (Darwin/Linux) - Designed for TerryDavis OS\n");
             return 0;
         } else if (argv[i][0] != '-') {
             src_path = argv[i];
@@ -501,16 +503,21 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    /* Locate holyc_rt.h and get absolute path */
-    char rt_path[1024] = "src/runtime/holyc_rt.h";
-    char abs_rt_path[1024] = "";
-    if (realpath(rt_path, abs_rt_path) == NULL) {
-        if (realpath("../src/runtime/holyc_rt.h", abs_rt_path) == NULL) {
-            realpath("holyc_rt.h", abs_rt_path);
-        }
+    /* Locate holyc_rt.h using realpath(path, NULL) for POSIX/glibc safety */
+    char *real_rt = realpath("src/runtime/holyc_rt.h", NULL);
+    if (!real_rt) {
+        real_rt = realpath("../src/runtime/holyc_rt.h", NULL);
     }
-    if (abs_rt_path[0] == '\0') {
-        strcpy(abs_rt_path, "src/runtime/holyc_rt.h");
+    if (!real_rt) {
+        real_rt = realpath("holyc_rt.h", NULL);
+    }
+
+    char abs_rt_path[PATH_MAX];
+    if (real_rt) {
+        snprintf(abs_rt_path, sizeof(abs_rt_path), "%s", real_rt);
+        free(real_rt);
+    } else {
+        snprintf(abs_rt_path, sizeof(abs_rt_path), "src/runtime/holyc_rt.h");
     }
 
     char *transpiled = transpile_holyc_file(src_path, abs_rt_path);
@@ -525,7 +532,7 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    char tmp_c_path[256];
+    char tmp_c_path[PATH_MAX];
     snprintf(tmp_c_path, sizeof(tmp_c_path), "/tmp/holyc_%d_%u.c", getpid(), (unsigned int)time(NULL));
     FILE *ftmp = fopen(tmp_c_path, "w");
     if (!ftmp) {
@@ -537,10 +544,11 @@ int main(int argc, char **argv) {
     fclose(ftmp);
     free(transpiled);
 
-    char cmd[4096];
-    char target_out[512];
+    char cmd[PATH_MAX * 2];
+    char target_out[PATH_MAX];
     if (out_path) {
         strncpy(target_out, out_path, sizeof(target_out) - 1);
+        target_out[sizeof(target_out) - 1] = '\0';
     } else if (flag_run) {
         snprintf(target_out, sizeof(target_out), "/tmp/holyc_bin_%d", getpid());
     } else if (flag_c) {
