@@ -19,7 +19,7 @@ bin/holy_unix: tools/holyc src/holyc/Kernel.HC src/holyc/*.HC src/runtime/holyc_
 	@echo "==> Build successful: bin/holy_unix"
 
 tests/test_linux_kernel: tests/test_linux_kernel.c
-	$(CC) $(CFLAGS) tests/test_linux_kernel.c -o tests/test_linux_kernel
+	$(CC) $(CFLAGS) tests/test_linux_kernel.c -o tests/test_linux_kernel -lm
 
 test: bin/holy_unix tests/test_linux_kernel
 	@echo "==> Running Automated In-Kernel Subsystem Test Suite..."

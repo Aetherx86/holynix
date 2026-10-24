@@ -607,7 +607,7 @@ int main(int argc, char **argv) {
                  cc, inc_dirs, tmp_c_path, target_out);
     } else {
         snprintf(cmd, sizeof(cmd),
-                 "%s -std=c11 -Wall -Wno-unused-function -Wno-pointer-sign -O2%s \"%s\" -o \"%s\"",
+                 "%s -std=c11 -Wall -Wno-unused-function -Wno-pointer-sign -O2%s \"%s\" -o \"%s\" -lm",
                  cc, inc_dirs, tmp_c_path, target_out);
     }
 
