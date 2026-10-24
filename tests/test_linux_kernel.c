@@ -755,6 +755,141 @@ static void test_system_introspection_and_templeos_flight(void) {
     ASSERT_STR_CONTAINS(out, "user", "time reports user execution duration");
 }
 
+/*
+ * ============================================================================
+ * [TDD Suite 14] Exhaustive Command Line Matrix & Aliases Verification
+ * ============================================================================
+ */
+static void test_exhaustive_command_line_matrix(void) {
+    char out[8192];
+    printf(COLOR_CYAN "\n=== [TDD Suite 14] Exhaustive Command Line Matrix & Aliases ===\n" COLOR_RESET);
+
+    /* 14.1 Calendar and Sequence Generators (cal, seq) */
+    exec_holy_unix("cal", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "Su Mo Tu We Th Fr Sa", "cal prints calendar weekday header");
+    ASSERT_STR_CONTAINS(out, "2026", "cal outputs current year");
+
+    exec_holy_unix("seq 4", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "1\n2\n3\n4", "seq outputs simple sequence");
+
+    exec_holy_unix("seq 10 2 16", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "10\n12\n14\n16", "seq with custom step increments sequence correctly");
+
+    /* 14.2 Live Process Top and Screen Controls (top, theme, clear, help) */
+    exec_holy_unix("top -n 1", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "HolyC Unix Process Monitor", "top displays process monitor title");
+    ASSERT_STR_CONTAINS(out, "Ring0 Flat", "top reports Ring0 mode");
+
+    exec_holy_unix("theme", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "TempleOS VGA Mode", "theme activates TempleOS VGA 16-color palette mode");
+
+    exec_holy_unix("clear", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "\033[2J", "clear outputs ANSI clear screen sequence");
+
+    exec_holy_unix("help", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "HolyC Unix Shell (holysh)", "help outputs holysh manual");
+    ASSERT_STR_CONTAINS(out, "Pipelines", "help documents Unix pipelines and redirections");
+
+    /* 14.3 Exit Status Evaluation (true, false) */
+    exec_holy_unix("true; echo code_$?", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "code_0", "true sets last exit code to 0");
+
+    exec_holy_unix("false; echo code_$?", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "code_1", "false sets last exit code to 1");
+
+    /* 14.4 PC Speaker Audio & TempleOS Generative Art (beep, godsong, donut) */
+    exec_holy_unix("beep 440 100", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "[Beep: 440 Hz, 100 ms]", "beep reports simulated PC speaker frequency and duration");
+
+    exec_holy_unix("godsong", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "TempleOS Divine GodSong", "godsong generates divine melody and lyrics");
+    ASSERT_STR_CONTAINS(out, "Melody:", "godsong contains melody notes");
+
+    exec_holy_unix("donut", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "TempleOS 3D Divine Cube", "donut renders 3D wireframe ASCII cube");
+    ASSERT_STR_CONTAINS(out, "God", "donut contains divine inscription");
+
+    /* 14.5 Terminal Line Discipline (stty size, stty -a) */
+    exec_holy_unix("stty size", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "24 80", "stty size reports standard terminal dimensions");
+
+    exec_holy_unix("stty -a", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "speed 38400 baud", "stty -a reports line discipline parameters");
+
+    /* 14.6 Command Aliases & Equivalents (whereis, split, toslinecnt, neofetch, fbgrab, more, getgod, music, godwords) */
+    exec_holy_unix("whereis ls", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "/bin/ls", "whereis resolves /bin/ls");
+
+    exec_holy_unix("split", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "TempleOS Window Manager", "split invokes dual tiled window manager");
+
+    exec_holy_unix("toslinecnt", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "TEMPLEOS 100,000 LOC DIVINE LIMIT", "toslinecnt alias executes LOC compliance check");
+
+    exec_holy_unix("neofetch", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "terry@holy-unix", "neofetch alias outputs system badge banner");
+
+    exec_holy_unix("fbgrab /tmp/snap.DD; cat /tmp/snap.DD", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "HolyNix Framebuffer Screen Capture", "fbgrab alias captures framebuffer to DolDoc file");
+
+    exec_holy_unix("echo 'Sample $FG,RED$Text$FG$' > /tmp/m.DD; more /tmp/m.DD", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "Text", "more alias renders DolDoc text");
+
+    exec_holy_unix("getgod list", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "Holy Package Manager", "getgod alias lists available holy packages");
+
+    exec_holy_unix("music 3q.D", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "Frequency:", "music alias displays frequency field");
+    ASSERT_STR_CONTAINS(out, "146 Hz", "music alias computes note pitch and duration");
+
+    exec_holy_unix("godwords 2", out, sizeof(out));
+    ASSERT_TRUE(strlen(out) > 3, "godwords outputs divine vocabulary");
+
+    /* 14.7 Ring-0 Memory Peeker & Machine Disassembler (poke, memdump, peek, u) */
+    exec_holy_unix("poke 0x5000 0x42; peek 0x5000 16", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "0x0000000000005000", "peek displays hex memory row for specified address");
+
+    exec_holy_unix("memdump 0x5000 16", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "ADDRESS", "memdump displays memory dump table header");
+
+    exec_holy_unix("u 0x401000 2", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "DISASSEMBLY (x86_64)", "u alias disassembles machine code");
+
+    /* 14.8 Task Scheduler Daemon & Volume Inspector (cron, crontab, redsea) */
+    exec_holy_unix("cron", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "ACTIVE (In-Kernel Scheduler)", "cron reports active kernel scheduler");
+
+    exec_holy_unix("crontab -a 30 uptime; crontab -l", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "30", "crontab registers and lists new periodic job");
+
+    exec_holy_unix("redsea inspect /boot/redsea.img", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "VALID REDSEA VOLUME", "redsea inspect verifies TempleOS 64-bit volume header");
+
+    exec_holy_unix("redsea ls /boot/redsea.img", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "KERNEL.BIN", "redsea ls lists directory entries");
+
+    /* 14.9 Bible Oracle & Concordance (bible, godpassage) */
+    exec_holy_unix("bible Genesis 1:1", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "In the beginning", "bible Genesis 1:1 returns canonical scripture");
+
+    exec_holy_unix("godpassage", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "Divine Scripture Oracle", "godpassage provides random divine scripture oracle");
+
+    /* 14.10 Kernel Limits, IPC & Credentials (ulimit, ipcs, passwd) */
+    exec_holy_unix("ulimit -s", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "8192", "ulimit -s reports stack limit in kbytes");
+
+    exec_holy_unix("ulimit -u", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "64", "ulimit -u reports max user process limit");
+
+    exec_holy_unix("ipcs", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "Message Queues", "ipcs displays message queue facilities");
+    ASSERT_STR_CONTAINS(out, "Shared Memory", "ipcs displays shared memory segment facilities");
+
+    exec_holy_unix("passwd", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "password updated successfully", "passwd updates user authentication token");
+}
+
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
     printf(COLOR_YELLOW "========================================================\n");
@@ -774,6 +909,7 @@ int main(int argc, char **argv) {
     test_linux_text_streaming_pipelines();
     test_microkernel_subsystems_and_music();
     test_system_introspection_and_templeos_flight();
+    test_exhaustive_command_line_matrix();
 
     printf("\n" COLOR_YELLOW "========================================================\n");
     printf("  TDD Test Results: " COLOR_GREEN "%d Passed" COLOR_RESET ", "

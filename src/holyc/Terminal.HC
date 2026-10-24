@@ -108,7 +108,7 @@ I64 TermWrite(const U8 *buf, I64 count) {
 
 U0 TermClearScreen() {
     if (g_templeos_blue_theme) {
-        TermWriteRaw("\033[44;97m\033[2J\033[H", 16);
+        TermWriteRaw("\033[44;97m\033[2J\033[H", 15);
     } else {
         TermWriteRaw("\033[0m\033[2J\033[H", 11);
     }

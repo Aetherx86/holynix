@@ -151,10 +151,10 @@ holynix/
 │       ├── Net.HC               # Simulated network stack, ICMP ping, netstat, curl
 │       ├── Man.HC               # POSIX manual pages subsystem (man, apropos, whatis)
 │       ├── Games.HC             # Castle 3D, Flight, Matrix, AfterEgypt, Music, Badge
-│       ├── Shell.HC             # Unix terminal shell (holysh) & 75+ builtins
+│       ├── Shell.HC             # Unix terminal shell (holysh) & 80+ builtins
 │       └── Kernel.HC            # Master kernel boot sequence & 45 in-kernel tests
 └── tests/
-    ├── test_linux_kernel.c      # Linux/POSIX compliance TDD test suite (173 tests)
+    ├── test_linux_kernel.c      # Linux/POSIX compliance TDD test suite (216 tests)
     └── run_tests.sh             # Automated end-to-end verification script
 ```
 
@@ -174,7 +174,7 @@ make
 
 ### 3. Run Automated Tests
 ```bash
-# Run in-kernel tests (45/45) + Linux POSIX compliance TDD test suite (173/173)
+# Run in-kernel tests (45/45) + Linux POSIX compliance TDD test suite (216/216)
 make test
 
 # Or run the complete automated end-to-end verification script:
@@ -200,7 +200,7 @@ To run commands non-interactively in batch mode:
 
 HolyNix is verified on every commit across a **4-runner CI matrix** on GitHub Actions:
 
-| Runner OS | Compiler | In-Kernel (45/45) | POSIX TDD (173/173) | End-to-End Suite | Artifact Generated |
+| Runner OS | Compiler | In-Kernel (45/45) | POSIX TDD (216/216) | End-to-End Suite | Artifact Generated |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Ubuntu Linux** (`ubuntu-latest`) | `gcc` | **PASS** | **PASS** | **PASS** | — |
 | **Ubuntu Linux** (`ubuntu-latest`) | `clang` | **PASS** | **PASS** | **PASS** | `holynix-linux-x86_64` |
@@ -211,7 +211,7 @@ HolyNix is verified on every commit across a **4-runner CI matrix** on GitHub Ac
 
 ## Test-Driven Development (TDD) Compliance Matrix
 
-HolyNix incorporates 13 comprehensive TDD suites verifying 173 compliance assertions:
+HolyNix incorporates 14 comprehensive TDD suites verifying 216 compliance assertions:
 
 | Suite | Category | Verifications | Status |
 | :---: | :--- | :--- | :---: |
@@ -228,6 +228,7 @@ HolyNix incorporates 13 comprehensive TDD suites verifying 173 compliance assert
 | **11**| **Linux Core Text Pipelines** | `cut -d: -f1`, `cut -d: -f3`, `tr a-z A-Z`, `tr 0-9 A-J`, `tr -d`, `sed` (global, single, multi-line), `basename`, `dirname`, `paste`, `fold -w` | **100% PASS** |
 | **12**| **Microkernel & Music System** | `/proc/modules`, `lsmod`, `insmod`, `rmmod`, `/proc/vmstat`, `vmstat`, `pstree`, `ulimit`, `ipcs`, `holyfetch`, `play`, `juke`, `screenshot` | **100% PASS** |
 | **13**| **Introspection, Flight & Limits** | `flight -p -r -a` 3D HUD, `matrix` rain, `linecnt` VFS counts, `hcbench`, `godword`, `which` missing errors, `type` alias/builtin/not-found, `hostname` root check & procfs sync, `sync`, `who`, `w`, `nl`, `xxd`, `time` | **100% PASS** |
+| **14**| **Command Line Matrix & Aliases** | `cal`, `seq` multi-step, `top -n 1`, `theme`, `clear`, `help`, `true`/`false` exit codes, `beep`, `godsong`, `donut`, `stty size/-a`, `whereis`, `split`, `toslinecnt`, `neofetch`, `fbgrab`, `more`, `getgod`, `music`, `godwords`, `poke`, `memdump`, `peek`, `u` disasm, `cron`, `crontab -a`, `redsea inspect/ls`, `bible`, `godpassage`, `ulimit -s/-u`, `ipcs`, `passwd` | **100% PASS** |
 
 ---
 

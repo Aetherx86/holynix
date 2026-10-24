@@ -2637,20 +2637,35 @@ U0 ShellCmdDonut(I64 argc, char **argv) {
  * Built-in Command: top (Live System Monitor)
  */
 U0 ShellCmdTop(I64 argc, char **argv) {
-    (U0)argc; (U0)argv;
+    I64 max_iter = 10;
+    if (!isatty(fileno(stdin))) {
+        max_iter = 1;
+    }
+    for (I64 i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
+            max_iter = atoll(argv[++i]);
+        } else if (argv[i][0] != '-') {
+            max_iter = atoll(argv[i]);
+        }
+    }
+    if (max_iter <= 0) max_iter = 1;
+
     Print("\033[?25l"); /* Hide cursor */
-    for (I64 iter = 0; iter < 10; ++iter) {
+    for (I64 iter = 0; iter < max_iter; ++iter) {
         TermClearScreen();
-        Print("\033[93m================= HolyC Unix Process Monitor (top) =================\033[0m\n");
-        Print("Uptime: %llds | Tasks: %lld active | Kernel: 64-bit HolyC | Mode: Ring0 Flat\n\n",
+        ShellPrintOut("\033[93m================= HolyC Unix Process Monitor (top) =================\033[0m\n");
+        ShellPrintOut("Uptime: %llds | Tasks: %lld active | Kernel: 64-bit HolyC | Mode: Ring0 Flat\n\n",
               (long long)KernelGetUptimeSec(), (long long)MAX_TASKS);
         U8 buf[2048];
         TaskFormatProcTasks(buf, sizeof(buf));
-        Print("%s\n", buf);
-        Print("\033[90m(Auto-refreshing... Press Ctrl+C or wait 5s to exit)\033[0m\n");
-        SleepMs(500);
+        ShellPrintOut("%s\n", buf);
+        if (iter + 1 < max_iter) {
+            ShellPrintOut("\033[90m(Auto-refreshing... Press Ctrl+C or wait to exit)\033[0m\n");
+            SleepMs(500);
+        }
     }
     Print("\033[?25h"); /* Restore cursor */
+    g_last_exit_code = 0;
 }
 
 /*
@@ -3322,6 +3337,7 @@ U0 ShellCmdHelp(I64 argc, char **argv) {
     Print("  \033[92mexit / reboot\033[0m       Shut down or reboot the operating system\n");
     Print("Features: Pipelines (\033[96mcmd1 | cmd2\033[0m), Redirections (\033[96m< in\033[0m, \033[96m> out\033[0m, \033[96m>> out\033[0m), Logical (\033[96m&&\033[0m, \033[96m||\033[0m), Background (\033[96m&\033[0m)\n");
     Print("\033[93m=========================================================================\033[0m\n");
+    g_last_exit_code = 0;
 }
 
 /*
@@ -3448,8 +3464,8 @@ I64 ShellExecuteCommand(I64 argc, char **argv) {
     else if (strcmp(cmd, "true") == 0)   { g_last_exit_code = 0; return 0; }
     else if (strcmp(cmd, "false") == 0)  { g_last_exit_code = 1; return 1; }
     else if (strcmp(cmd, "top") == 0)    ShellCmdTop(argc, argv);
-    else if (strcmp(cmd, "clear") == 0)  TermClearScreen();
-    else if (strcmp(cmd, "theme") == 0)  TermToggleTheme();
+    else if (strcmp(cmd, "clear") == 0)  { TermClearScreen(); g_last_exit_code = 0; }
+    else if (strcmp(cmd, "theme") == 0)  { TermToggleTheme(); g_last_exit_code = 0; }
     else if (strcmp(cmd, "help") == 0)   ShellCmdHelp(argc, argv);
     else if (strcmp(cmd, "ed") == 0) {
         if (argc > 1) EditorRun((const U8*)argv[1]);
