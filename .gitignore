@@ -1,0 +1,13 @@
+# Build artifacts & binaries
+bin/
+tools/holyc
+tests/test_linux_kernel
+*.o
+*.out
+
+# Temporary compiler artifacts
+/tmp/holyc_*
+
+# OS artifacts
+.DS_Store
+Thumbs.db

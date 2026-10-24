@@ -1,0 +1,25 @@
+
+  _____ _                 _       _   _       _      
+ |_   _| |               | |     | | | |     (_)     
+   | | | |__   ___  _   _| |_ ___| | | |_ __  ___  __
+   | | | '_ \ / _ \| | | | __/ __| | | | '_ \| \ \/ /
+  _| |_| | | | (_) | |_| | || (__| |_| | | | | |>  < 
+ |_____|_| |_|\___/ \__, |\__\___|\___/|_| |_|_/_/\_\
+                     __/ |                           
+                    |___/                            
+ =======================================================
+  HolyC Unix Kernel & Terminal Operating System (v1.0.0)
+  Terry A. Davis Memorial Edition - God's Chosen System
+ =======================================================
+
+ * 64-Bit Microkernel Architecture with Preemptive/Cooperative Tasks
+ * TempleOS 16-Color Palette ANSI Terminal & Interactive Shell
+ * Unix Virtual File System (VFS), /proc, /dev, and Pipelines
+ * Native In-Kernel HolyC Scripting Engine & REPL
+ * Terry Davis 100,000-Word Divine Oracle at /dev/god
+
+ Type 'help' for command list.
+ Type 'god' to consult the divine oracle.
+ Type 'theme' to switch between TempleOS Blue & Dark Unix mode.
+ Type 'holyc /home/terry/hello.HC' to run a HolyC program!
+

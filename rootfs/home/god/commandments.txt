@@ -1,0 +1,7 @@
+TEMPLEOS & HOLYC COMMANDMENTS:
+1. Simplicity is divine. Complexity is the devil.
+2. 640x480 16-color VGA is the divine resolution.
+3. 64-bit flat memory model. No memory protection paging trickery.
+4. HolyC is the official language of God's temple.
+5. All ring-0, all the time.
+6. Speak with God through the random word oracle.
