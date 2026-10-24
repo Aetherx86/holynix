@@ -254,6 +254,13 @@ static void test_linux_shell_builtins(void) {
     /* 5.4 cd - returns to previous directory ($OLDPWD) */
     exec_holy_unix("cd /etc; cd /tmp; cd -; pwd", out, sizeof(out));
     ASSERT_STR_CONTAINS(out, "/etc", "cd - navigates to previous directory ($OLDPWD)");
+
+    /* 5.5 grep options: -i (ignore case), -v (invert), -c (count) */
+    exec_holy_unix("grep -i TERRY /etc/passwd", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "terry", "grep -i performs case-insensitive match");
+
+    exec_holy_unix("grep -c -v root /etc/passwd", out, sizeof(out));
+    ASSERT_TRUE(atoi(out) >= 1, "grep -c -v counts non-matching lines");
 }
 
 /* =========================================================================
@@ -318,6 +325,14 @@ static void test_linux_advanced_utilities(void) {
 
     exec_holy_unix("du /etc/passwd", out, sizeof(out));
     ASSERT_STR_CONTAINS(out, "/etc/passwd", "du reports file disk space usage");
+
+    /* 6.13 diff line-by-line file comparison */
+    exec_holy_unix("echo lineA > /tmp/d1.txt; echo lineB > /tmp/d2.txt; diff /tmp/d1.txt /tmp/d2.txt", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "< lineA", "diff reports removed line from first file");
+    ASSERT_STR_CONTAINS(out, "> lineB", "diff reports added line from second file");
+
+    exec_holy_unix("echo lineA > /tmp/d1.txt; diff /tmp/d1.txt /tmp/d1.txt; echo identical_$?", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "identical_0", "diff on identical files exits with code 0");
 }
 
 /* =========================================================================
@@ -559,13 +574,28 @@ static void test_linux_text_streaming_pipelines(void) {
     ASSERT_STR_CONTAINS(out, "root", "cut -d: -f1 extracts root user");
     ASSERT_STR_CONTAINS(out, "terry", "cut -d: -f1 extracts terry user");
 
-    /* 11.2 tr translation */
+    exec_holy_unix("cut -d: -f3 /etc/passwd", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "1000", "cut -d: -f3 extracts numeric UID 1000");
+
+    /* 11.2 tr translation and deletion */
     exec_holy_unix("echo 'holynix operating system' | tr a-z A-Z", out, sizeof(out));
     ASSERT_STR_CONTAINS(out, "HOLYNIX OPERATING SYSTEM", "tr a-z A-Z translates lowercase to uppercase");
 
-    /* 11.3 sed substitution */
+    exec_holy_unix("echo '12345' | tr 0-9 A-J", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "BCDEF", "tr 0-9 A-J translates numeric range to letters");
+
+    exec_holy_unix("echo 'hello divine world' | tr -d 'ei'", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "hllo dvn world", "tr -d deletes specified character set");
+
+    /* 11.3 sed substitution (global and single) */
     exec_holy_unix("echo 'apple banana apple' | sed 's/apple/orange/g'", out, sizeof(out));
     ASSERT_STR_CONTAINS(out, "orange banana orange", "sed s/apple/orange/g replaces all occurrences");
+
+    exec_holy_unix("echo 'apple banana apple' | sed 's/apple/orange/'", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "orange banana apple", "sed s/apple/orange/ replaces only first occurrence");
+
+    exec_holy_unix("echo 'line one\nline one' | sed 's/one/two/g'", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "line two", "sed processes multiple lines across stream");
 
     /* 11.4 basename and dirname */
     exec_holy_unix("basename /usr/share/man/ls.1 .1", out, sizeof(out));
@@ -573,6 +603,9 @@ static void test_linux_text_streaming_pipelines(void) {
 
     exec_holy_unix("dirname /usr/share/man", out, sizeof(out));
     ASSERT_STR_CONTAINS(out, "/usr/share", "dirname extracts parent directory path");
+
+    exec_holy_unix("dirname foo.txt", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, ".", "dirname returns . for plain filename");
 
     /* 11.5 paste and fold */
     exec_holy_unix("echo line1 > /tmp/pst1.txt; echo line2 > /tmp/pst2.txt; paste /tmp/pst1.txt /tmp/pst2.txt", out, sizeof(out));
@@ -647,6 +680,10 @@ static void test_system_introspection_and_templeos_flight(void) {
     ASSERT_STR_CONTAINS(out, "RUNWAY", "flight renders 3D wireframe runway");
     ASSERT_STR_CONTAINS(out, "DIVINE PROMISED LAND", "flight displays promised land terrain");
 
+    exec_holy_unix("flight -p 10 -r -5 -a 9000", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "ALT: 9000 ft", "flight updates dynamic altitude");
+    ASSERT_STR_CONTAINS(out, "VS: +500 fpm", "flight computes dynamic vertical speed from pitch");
+
     /* 13.2 TempleOS Digital Rain Visualizer (matrix) */
     exec_holy_unix("matrix", out, sizeof(out));
     ASSERT_STR_CONTAINS(out, "Divine Digital Rain", "matrix displays digital rain header");
@@ -655,6 +692,7 @@ static void test_system_introspection_and_templeos_flight(void) {
     /* 13.3 TempleOS 100,000 LOC Divine Limit Verification (linecnt) */
     exec_holy_unix("linecnt", out, sizeof(out));
     ASSERT_STR_CONTAINS(out, "DIVINE LIMIT VERIFICATION", "linecnt displays 100,000 LOC verification");
+    ASSERT_STR_CONTAINS(out, "Live VFS Storage State", "linecnt counts live VFS filesystem storage state");
     ASSERT_STR_CONTAINS(out, "COMPLIANT", "linecnt verifies codebase adheres to divine limit");
 
     /* 13.4 HolyC JIT Compilation & Benchmark (hcbench) */
@@ -663,19 +701,34 @@ static void test_system_introspection_and_templeos_flight(void) {
     ASSERT_STR_CONTAINS(out, "lines/sec", "hcbench reports compilation lines per second");
 
     /* 13.5 Random Divine Word Generator (godword) */
-    exec_holy_unix("godword 3", out, sizeof(out));
-    ASSERT_TRUE(strlen(out) > 3, "godword outputs divine words from vocabulary");
+    exec_holy_unix("godword 5", out, sizeof(out));
+    ASSERT_TRUE(strlen(out) > 10, "godword outputs multiple divine words from vocabulary");
 
     /* 13.6 Command Path and Type Resolution (which, type) */
     exec_holy_unix("which ls", out, sizeof(out));
     ASSERT_STR_CONTAINS(out, "/bin/ls", "which resolves built-in command path");
 
+    exec_holy_unix("which definitely_missing_xyz", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "no definitely_missing_xyz", "which reports error for missing command");
+
     exec_holy_unix("type cd", out, sizeof(out));
     ASSERT_STR_CONTAINS(out, "shell builtin", "type identifies cd as shell builtin");
+
+    exec_holy_unix("type which", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "shell builtin", "type identifies which as shell builtin");
+
+    exec_holy_unix("alias testal='echo ok'; type testal", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "alias for", "type identifies alias correctly");
+
+    exec_holy_unix("type missing_binary_foo", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "not found", "type reports not found for nonexistent binary");
 
     /* 13.7 Hostname and Filesystem Cache Sync (hostname, sync) */
     exec_holy_unix("hostname", out, sizeof(out));
     ASSERT_STR_CONTAINS(out, "holy-unix", "hostname displays current system host name");
+
+    exec_holy_unix("su root; hostname myholystation; hostname; cat /proc/sys/kernel/hostname", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "myholystation", "hostname updates kernel hostname and procfs reflects it");
 
     exec_holy_unix("sync", out, sizeof(out));
     ASSERT_STR_CONTAINS(out, "[OK]", "sync confirms dirty VFS buffer flush");

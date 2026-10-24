@@ -592,6 +592,26 @@ I64 VFSStat(const U8 *path, const U8 *cwd, CKernelStat *st, Bool follow_symlink)
     return 0;
 }
 
+I64 VFSCountFiles(I64 *out_total_bytes, I64 *out_total_lines) {
+    I64 count = 0;
+    I64 bytes = 0;
+    I64 lines = 0;
+    for (I64 i = 0; i < g_inode_count; ++i) {
+        if (g_inodes[i].type == VFS_REGULAR) {
+            count++;
+            bytes += g_inodes[i].size;
+            if (g_inodes[i].data) {
+                for (I64 j = 0; j < g_inodes[i].size; ++j) {
+                    if (g_inodes[i].data[j] == '\n') lines++;
+                }
+            }
+        }
+    }
+    if (out_total_bytes) *out_total_bytes = bytes;
+    if (out_total_lines) *out_total_lines = lines;
+    return count;
+}
+
 U0 VFSInit() {
     g_inode_count = 0;
     MemSet(g_inodes, 0, sizeof(g_inodes));

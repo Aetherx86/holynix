@@ -821,43 +821,76 @@ U0 ShellCmdCut(I64 argc, char **argv) {
     if (file) {
         fd = SysOpen((const U8*)file, O_RDONLY);
         if (fd < 0) {
-            Print("cut: %s: No such file or directory\n", file);
+            ShellPrintOut("cut: %s: No such file or directory\n", file);
             g_last_exit_code = 1;
             return;
         }
     }
 
-    char buf[4096];
+    char buf[8192];
     I64 n = SysRead(fd, (U8*)buf, sizeof(buf) - 1);
     if (file) SysClose(fd);
     if (n <= 0) return;
     buf[n] = '\0';
 
-    char *saveptr = NULL;
-    char *line = strtok_r(buf, "\r\n", &saveptr);
-    while (line) {
-        char *cur = line;
-        I64 f = 1;
-        char *val = cur;
-        while (*cur) {
-            if (*cur == delim) {
-                if (f == field) {
-                    *cur = '\0';
-                    break;
-                }
-                f++;
-                val = cur + 1;
-            }
-            cur++;
-        }
-        if (f == field) {
-            ShellPrintOut("%s\n", val);
+    char *cur = buf;
+    while (*cur) {
+        char *eol = strchr(cur, '\n');
+        if (eol) *eol = '\0';
+
+        /* If line does not contain delimiter, POSIX cut prints entire line */
+        if (strchr(cur, delim) == NULL) {
+            ShellPrintOut("%s\n", cur);
         } else {
-            ShellPrintOut("%s\n", line);
+            char *line_p = cur;
+            I64 f = 1;
+            char *val = line_p;
+            Bool found_field = FALSE;
+
+            while (*line_p) {
+                if (*line_p == delim) {
+                    if (f == field) {
+                        *line_p = '\0';
+                        found_field = TRUE;
+                        break;
+                    }
+                    f++;
+                    val = line_p + 1;
+                }
+                line_p++;
+            }
+            if (!found_field && f == field) {
+                found_field = TRUE;
+            }
+            if (found_field) {
+                ShellPrintOut("%s\n", val);
+            } else {
+                ShellPrintOut("\n");
+            }
         }
-        line = strtok_r(NULL, "\r\n", &saveptr);
+        if (eol) cur = eol + 1;
+        else break;
     }
     g_last_exit_code = 0;
+}
+
+static U0 ExpandCharRange(const char *in, char *out, size_t out_max) {
+    if (!in || !out || out_max == 0) return;
+    size_t oi = 0;
+    size_t ilen = strlen(in);
+    for (size_t i = 0; i < ilen && oi + 1 < out_max; ++i) {
+        if (i + 2 < ilen && in[i + 1] == '-' && in[i] <= in[i + 2]) {
+            char start = in[i];
+            char end = in[i + 2];
+            for (char c = start; c <= end && oi + 1 < out_max; ++c) {
+                out[oi++] = c;
+            }
+            i += 2;
+        } else {
+            out[oi++] = in[i];
+        }
+    }
+    out[oi] = '\0';
 }
 
 /*
@@ -888,29 +921,32 @@ U0 ShellCmdTr(I64 argc, char **argv) {
     if (n <= 0) return;
     buf[n] = '\0';
 
+    char exp1[512] = "";
+    char exp2[512] = "";
+    if (s1) ExpandCharRange(s1, exp1, sizeof(exp1));
+    if (s2) ExpandCharRange(s2, exp2, sizeof(exp2));
+
     char out_buf[4096];
     I64 out_len = 0;
 
     for (I64 i = 0; i < n && out_len < (I64)sizeof(out_buf) - 1; ++i) {
         char c = buf[i];
         if (delete_mode) {
-            if (!s1 || strchr(s1, c) == NULL) {
+            if (exp1[0] && strchr(exp1, c) == NULL) {
                 out_buf[out_len++] = c;
             }
-        } else if (s1 && s2) {
-            if (strcmp(s1, "a-z") == 0 && strcmp(s2, "A-Z") == 0) {
-                out_buf[out_len++] = (char)toupper((unsigned char)c);
-            } else if (strcmp(s1, "A-Z") == 0 && strcmp(s2, "a-z") == 0) {
-                out_buf[out_len++] = (char)tolower((unsigned char)c);
-            } else {
-                char *pos = strchr(s1, c);
-                if (pos) {
-                    I64 idx = pos - s1;
-                    if (idx < (I64)strlen(s2)) out_buf[out_len++] = s2[idx];
-                    else out_buf[out_len++] = s2[strlen(s2) - 1];
+        } else if (exp1[0] && exp2[0]) {
+            char *pos = strchr(exp1, c);
+            if (pos) {
+                I64 idx = pos - exp1;
+                size_t len2 = strlen(exp2);
+                if (idx < (I64)len2) {
+                    out_buf[out_len++] = exp2[idx];
                 } else {
-                    out_buf[out_len++] = c;
+                    out_buf[out_len++] = exp2[len2 - 1];
                 }
+            } else {
+                out_buf[out_len++] = c;
             }
         } else {
             out_buf[out_len++] = c;
@@ -949,24 +985,25 @@ U0 ShellCmdSed(I64 argc, char **argv) {
     char repl_str[128] = "";
     Bool global_flag = FALSE;
 
-    if (expr[0] == 's' && expr[1] == '/') {
-        char *slash1 = (char*)expr + 1;
-        char *slash2 = strchr(slash1 + 1, '/');
-        if (slash2) {
-            size_t flen = slash2 - (slash1 + 1);
+    if (expr[0] == 's' && expr[1] != '\0') {
+        char delim = expr[1];
+        char *d1 = (char*)expr + 1;
+        char *d2 = strchr(d1 + 1, delim);
+        if (d2) {
+            size_t flen = d2 - (d1 + 1);
             if (flen > 127) flen = 127;
-            strncpy(find_str, slash1 + 1, flen);
+            strncpy(find_str, d1 + 1, flen);
             find_str[flen] = '\0';
 
-            char *slash3 = strchr(slash2 + 1, '/');
-            if (slash3) {
-                size_t rlen = slash3 - (slash2 + 1);
+            char *d3 = strchr(d2 + 1, delim);
+            if (d3) {
+                size_t rlen = d3 - (d2 + 1);
                 if (rlen > 127) rlen = 127;
-                strncpy(repl_str, slash2 + 1, rlen);
+                strncpy(repl_str, d2 + 1, rlen);
                 repl_str[rlen] = '\0';
-                if (strchr(slash3 + 1, 'g')) global_flag = TRUE;
+                if (strchr(d3 + 1, 'g')) global_flag = TRUE;
             } else {
-                strncpy(repl_str, slash2 + 1, sizeof(repl_str) - 1);
+                strncpy(repl_str, d2 + 1, sizeof(repl_str) - 1);
             }
         }
     }
@@ -981,34 +1018,49 @@ U0 ShellCmdSed(I64 argc, char **argv) {
         }
     }
 
-    char buf[4096];
+    char buf[8192];
     I64 n = SysRead(fd, (U8*)buf, sizeof(buf) - 1);
     if (file) SysClose(fd);
     if (n <= 0) return;
     buf[n] = '\0';
 
     if (find_str[0] == '\0') {
-        ShellPrintOut("%s", buf);
+        SysWrite(STDOUT_FILENO, (const U8*)buf, n);
+        g_last_exit_code = 0;
         return;
     }
 
-    char *p = buf;
+    /* Process line by line */
     size_t flen = strlen(find_str);
-    while (*p) {
-        char *found = strstr(p, find_str);
-        if (found) {
-            while (p < found) {
-                char ch = *p++;
-                SysWrite(STDOUT_FILENO, (const U8*)&ch, 1);
-            }
-            ShellPrintOut("%s", repl_str);
-            p += flen;
-            if (!global_flag) {
-                ShellPrintOut("%s", p);
+    char *cur = buf;
+    while (*cur) {
+        char *eol = strchr(cur, '\n');
+        if (eol) *eol = '\0';
+
+        char *lp = cur;
+        Bool replaced_on_line = FALSE;
+        while (*lp) {
+            char *found = strstr(lp, find_str);
+            if (found && (!replaced_on_line || global_flag)) {
+                if (found > lp) {
+                    SysWrite(STDOUT_FILENO, (const U8*)lp, found - lp);
+                }
+                SysWrite(STDOUT_FILENO, (const U8*)repl_str, strlen(repl_str));
+                lp = found + flen;
+                replaced_on_line = TRUE;
+                if (!global_flag) {
+                    SysWrite(STDOUT_FILENO, (const U8*)lp, strlen(lp));
+                    break;
+                }
+            } else {
+                SysWrite(STDOUT_FILENO, (const U8*)lp, strlen(lp));
                 break;
             }
+        }
+        if (eol) {
+            SysWrite(STDOUT_FILENO, (const U8*)"\n", 1);
+            cur = eol + 1;
         } else {
-            ShellPrintOut("%s", p);
             break;
         }
     }
@@ -1251,8 +1303,20 @@ U0 ShellCmdScreenshot(I64 argc, char **argv) {
  * Built-in Commands: flight, matrix, linecnt, hcbench, godword
  */
 U0 ShellCmdFlight(I64 argc, char **argv) {
-    (U0)argc; (U0)argv;
-    FlightRun();
+    I64 pitch = 0;
+    I64 roll = 0;
+    I64 alt = 4500;
+    for (I64 i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) pitch = atoll(argv[++i]);
+        else if (strcmp(argv[i], "-r") == 0 && i + 1 < argc) roll = atoll(argv[++i]);
+        else if (strcmp(argv[i], "-a") == 0 && i + 1 < argc) alt = atoll(argv[++i]);
+        else if (argv[i][0] != '-') {
+            if (i == 1) pitch = atoll(argv[1]);
+            else if (i == 2) roll = atoll(argv[2]);
+            else if (i == 3) alt = atoll(argv[3]);
+        }
+    }
+    FlightRun(pitch, roll, alt);
     g_last_exit_code = 0;
 }
 
@@ -1279,7 +1343,7 @@ U0 ShellCmdGodWord(I64 argc, char **argv) {
     if (argc > 1) {
         count = atoll(argv[1]);
         if (count <= 0) count = 1;
-        if (count > 20) count = 20;
+        if (count > 50) count = 50;
     }
     for (I64 i = 0; i < count; ++i) {
         ShellPrintOut("%s%s", GodGetWord(), (i + 1 < count) ? " " : "\n");
@@ -1290,12 +1354,34 @@ U0 ShellCmdGodWord(I64 argc, char **argv) {
 /*
  * Built-in Commands: which, type, hostname, sync, who, w, nl, xxd, time
  */
+static const char *s_known_builtins[] = {
+    "ls", "cd", "pwd", "mkdir", "touch", "rm", "cp", "mv", "cat", "echo",
+    "ps", "kill", "uname", "uptime", "whoami", "dmesg", "god", "grep",
+    "head", "tail", "wc", "stat", "chmod", "chown", "date", "find",
+    "sort", "uniq", "tee", "seq", "ln", "readlink", "df", "du", "diff",
+    "hexdump", "cal", "sleep", "exit", "export", "env", "printenv",
+    "source", ".", "alias", "unalias", "history", "jobs", "fg", "bg",
+    "sysctl", "tar", "ping", "netstat", "cron", "crontab", "doldoc",
+    "holyless", "bible", "godpassage", "goddoodle", "redsea", "peek",
+    "poke", "memdump", "disasm", "hpm", "man", "apropos", "whatis",
+    "curl", "fetch", "id", "groups", "su", "sudo", "passwd", "stty",
+    "test", "[", "castle", "afteregypt", "flappy", "wintile", "split",
+    "cut", "tr", "sed", "paste", "fold", "basename", "dirname",
+    "lsmod", "insmod", "rmmod", "vmstat", "pstree", "ulimit", "ipcs",
+    "holyfetch", "neofetch", "play", "music", "juke", "screenshot",
+    "fbgrab", "flight", "matrix", "linecnt", "toslinecnt", "hcbench",
+    "hostname", "clear", "sync", "who", "w", "nl", "xxd", "time", "godword",
+    "godwords", "which", "whereis", "type", "true", "false", "top", "theme", "help", "ed", "holyc",
+    "reboot", "halt", "run", "beep", "godsong", "donut", "more", "getgod", NULL
+};
+
 U0 ShellCmdWhich(I64 argc, char **argv) {
     if (argc < 2) {
         Print("usage: which command ...\n");
         g_last_exit_code = 1;
         return;
     }
+    I64 not_found = 0;
     for (I64 i = 1; i < argc; ++i) {
         const char *name = argv[i];
         const char *al = ShellGetAlias(name);
@@ -1303,39 +1389,28 @@ U0 ShellCmdWhich(I64 argc, char **argv) {
             ShellPrintOut("%s: aliased to %s\n", name, al);
             continue;
         }
-        static const char *known_builtins[] = {
-            "ls", "cd", "pwd", "mkdir", "touch", "rm", "cp", "mv", "cat", "echo",
-            "ps", "kill", "uname", "uptime", "whoami", "dmesg", "god", "grep",
-            "head", "tail", "wc", "stat", "chmod", "chown", "date", "find",
-            "sort", "uniq", "tee", "seq", "ln", "readlink", "df", "du", "diff",
-            "hexdump", "cal", "sleep", "exit", "export", "env", "printenv",
-            "source", ".", "alias", "unalias", "history", "jobs", "fg", "bg",
-            "sysctl", "tar", "ping", "netstat", "cron", "crontab", "doldoc",
-            "holyless", "bible", "godpassage", "goddoodle", "redsea", "peek",
-            "poke", "memdump", "disasm", "hpm", "man", "apropos", "whatis",
-            "curl", "fetch", "id", "groups", "su", "sudo", "passwd", "stty",
-            "test", "[", "castle", "afteregypt", "flappy", "wintile", "split",
-            "cut", "tr", "sed", "paste", "fold", "basename", "dirname",
-            "lsmod", "insmod", "rmmod", "vmstat", "pstree", "ulimit", "ipcs",
-            "holyfetch", "neofetch", "play", "music", "juke", "screenshot",
-            "fbgrab", "flight", "matrix", "linecnt", "hcbench", "hostname",
-            "clear", "sync", "who", "w", "nl", "xxd", "time", "godword", NULL
-        };
         Bool is_builtin = FALSE;
-        for (I64 b = 0; known_builtins[b]; ++b) {
-            if (strcmp(name, known_builtins[b]) == 0) {
+        for (I64 b = 0; s_known_builtins[b]; ++b) {
+            if (strcmp(name, s_known_builtins[b]) == 0) {
                 is_builtin = TRUE;
                 break;
             }
         }
         if (is_builtin) {
             ShellPrintOut("/bin/%s\n", name);
-            g_last_exit_code = 0;
         } else {
-            ShellPrintOut("which: no %s in (/bin:/usr/bin:/sbin)\n", name);
-            g_last_exit_code = 1;
+            /* Check VFS file */
+            CTask *t = TaskGetCurrent();
+            I64 inum = VFSResolvePath((const U8*)name, t ? t->cwd : (const U8*)"/");
+            if (inum >= 0) {
+                ShellPrintOut("%s\n", name);
+            } else {
+                ShellPrintOut("which: no %s in (/bin:/usr/bin:/sbin)\n", name);
+                not_found++;
+            }
         }
     }
+    g_last_exit_code = (not_found > 0) ? 1 : 0;
 }
 
 U0 ShellCmdType(I64 argc, char **argv) {
@@ -1344,6 +1419,7 @@ U0 ShellCmdType(I64 argc, char **argv) {
         g_last_exit_code = 1;
         return;
     }
+    I64 not_found = 0;
     for (I64 i = 1; i < argc; ++i) {
         const char *name = argv[i];
         const char *al = ShellGetAlias(name);
@@ -1351,16 +1427,34 @@ U0 ShellCmdType(I64 argc, char **argv) {
             ShellPrintOut("%s is an alias for %s\n", name, al);
             continue;
         }
-        ShellPrintOut("%s is a shell builtin\n", name);
+        Bool is_builtin = FALSE;
+        for (I64 b = 0; s_known_builtins[b]; ++b) {
+            if (strcmp(name, s_known_builtins[b]) == 0) {
+                is_builtin = TRUE;
+                break;
+            }
+        }
+        if (is_builtin) {
+            ShellPrintOut("%s is a shell builtin\n", name);
+        } else {
+            CTask *t = TaskGetCurrent();
+            I64 inum = VFSResolvePath((const U8*)name, t ? t->cwd : (const U8*)"/");
+            if (inum >= 0) {
+                ShellPrintOut("%s is %s\n", name, name);
+            } else {
+                ShellPrintOut("type: %s: not found\n", name);
+                not_found++;
+            }
+        }
     }
-    g_last_exit_code = 0;
+    g_last_exit_code = (not_found > 0) ? 1 : 0;
 }
 
 U0 ShellCmdHostname(I64 argc, char **argv) {
     if (argc > 1) {
         CTask *t = TaskGetCurrent();
         if (t && t->uid != 0) {
-            Print("hostname: you must be root to change the host name\n");
+            ShellPrintOut("hostname: you must be root to change the host name\n");
             g_last_exit_code = 1;
             return;
         }
@@ -1512,34 +1606,91 @@ U0 ShellCmdGod(I64 argc, char **argv) {
  */
 U0 ShellCmdGrep(I64 argc, char **argv) {
     if (argc < 2) {
-        Print("Usage: grep <pattern> [file]\n");
+        Print("Usage: grep [-v] [-i] [-c] [-n] <pattern> [file]\n");
+        g_last_exit_code = 2;
         return;
     }
-    const char *pattern = argv[1];
+    Bool invert = FALSE;
+    Bool ignore_case = FALSE;
+    Bool count_only = FALSE;
+    Bool line_numbers = FALSE;
+    const char *pattern = NULL;
+    const char *file = NULL;
+
+    for (I64 i = 1; i < argc; ++i) {
+        if (argv[i][0] == '-' && argv[i][1] != '\0') {
+            for (I64 j = 1; argv[i][j]; ++j) {
+                if (argv[i][j] == 'v') invert = TRUE;
+                else if (argv[i][j] == 'i') ignore_case = TRUE;
+                else if (argv[i][j] == 'c') count_only = TRUE;
+                else if (argv[i][j] == 'n') line_numbers = TRUE;
+            }
+        } else if (!pattern) {
+            pattern = argv[i];
+        } else if (!file) {
+            file = argv[i];
+        }
+    }
+
+    if (!pattern) {
+        Print("grep: missing pattern\n");
+        g_last_exit_code = 2;
+        return;
+    }
+
     I64 fd = STDIN_FILENO;
-    if (argc >= 3) {
-        fd = SysOpen((const U8*)argv[2], O_RDONLY);
+    if (file) {
+        fd = SysOpen((const U8*)file, O_RDONLY);
         if (fd < 0) {
-            Print("grep: %s: No such file or directory\n", argv[2]);
+            ShellPrintOut("grep: %s: No such file or directory\n", file);
+            g_last_exit_code = 2;
             return;
         }
     }
 
-    U8 chunk[4096];
-    I64 bytes_read = SysRead(fd, chunk, sizeof(chunk) - 1);
-    if (fd != STDIN_FILENO) SysClose(fd);
+    char chunk[8192];
+    I64 bytes_read = SysRead(fd, (U8*)chunk, sizeof(chunk) - 1);
+    if (file) SysClose(fd);
 
+    I64 match_count = 0;
     if (bytes_read > 0) {
         chunk[bytes_read] = '\0';
-        char *saveptr = NULL;
-        char *line = strtok_r((char*)chunk, "\r\n", &saveptr);
-        while (line) {
-            if (strstr(line, pattern) != NULL) {
-                Print("%s\n", line);
+        char *cur = chunk;
+        I64 line_no = 1;
+
+        while (*cur) {
+            char *eol = strchr(cur, '\n');
+            if (eol) *eol = '\0';
+
+            Bool matched = FALSE;
+            if (ignore_case) {
+                matched = (strcasestr(cur, pattern) != NULL);
+            } else {
+                matched = (strstr(cur, pattern) != NULL);
             }
-            line = strtok_r(NULL, "\r\n", &saveptr);
+            if (invert) matched = !matched;
+
+            if (matched) {
+                match_count++;
+                if (!count_only) {
+                    if (line_numbers) {
+                        ShellPrintOut("%lld:%s\n", (long long)line_no, cur);
+                    } else {
+                        ShellPrintOut("%s\n", cur);
+                    }
+                }
+            }
+
+            line_no++;
+            if (eol) cur = eol + 1;
+            else break;
         }
     }
+
+    if (count_only) {
+        ShellPrintOut("%lld\n", (long long)match_count);
+    }
+    g_last_exit_code = (match_count > 0) ? 0 : 1;
 }
 
 /*
@@ -2161,9 +2312,9 @@ U0 ShellCmdDiff(I64 argc, char **argv) {
         return;
     }
 
-    U8 b1[4096], b2[4096];
-    I64 n1 = SysRead(fd1, b1, sizeof(b1) - 1);
-    I64 n2 = SysRead(fd2, b2, sizeof(b2) - 1);
+    char b1[4096], b2[4096];
+    I64 n1 = SysRead(fd1, (U8*)b1, sizeof(b1) - 1);
+    I64 n2 = SysRead(fd2, (U8*)b2, sizeof(b2) - 1);
     SysClose(fd1);
     SysClose(fd2);
 
@@ -2172,12 +2323,33 @@ U0 ShellCmdDiff(I64 argc, char **argv) {
     b1[n1] = '\0';
     b2[n2] = '\0';
 
-    if (strcmp((char*)b1, (char*)b2) == 0) {
-        g_last_exit_code = 0; /* Identical */
-    } else {
-        ShellPrintOut("< %s\n> %s\n", argv[1], argv[2]);
-        g_last_exit_code = 1; /* Different */
+    if (strcmp(b1, b2) == 0) {
+        g_last_exit_code = 0;
+        return;
     }
+
+    char *s1 = NULL, *s2 = NULL;
+    char *l1 = strtok_r(b1, "\r\n", &s1);
+    char *l2 = strtok_r(b2, "\r\n", &s2);
+    I64 line_no = 1;
+    Bool has_diff = FALSE;
+
+    while (l1 || l2) {
+        if (!l1 && l2) {
+            ShellPrintOut("%llda%lld\n> %s\n", (long long)line_no - 1, (long long)line_no, l2);
+            has_diff = TRUE;
+        } else if (l1 && !l2) {
+            ShellPrintOut("%lldd%lld\n< %s\n", (long long)line_no, (long long)line_no - 1, l1);
+            has_diff = TRUE;
+        } else if (strcmp(l1, l2) != 0) {
+            ShellPrintOut("%lldc%lld\n< %s\n---\n> %s\n", (long long)line_no, (long long)line_no, l1, l2);
+            has_diff = TRUE;
+        }
+        line_no++;
+        l1 = strtok_r(NULL, "\r\n", &s1);
+        l2 = strtok_r(NULL, "\r\n", &s2);
+    }
+    g_last_exit_code = has_diff ? 1 : 0;
 }
 
 /*

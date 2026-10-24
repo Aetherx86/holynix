@@ -154,7 +154,7 @@ holynix/
 │       ├── Shell.HC             # Unix terminal shell (holysh) & 75+ builtins
 │       └── Kernel.HC            # Master kernel boot sequence & 45 in-kernel tests
 └── tests/
-    ├── test_linux_kernel.c      # Linux/POSIX compliance TDD test suite (154 tests)
+    ├── test_linux_kernel.c      # Linux/POSIX compliance TDD test suite (173 tests)
     └── run_tests.sh             # Automated end-to-end verification script
 ```
 
@@ -174,7 +174,7 @@ make
 
 ### 3. Run Automated Tests
 ```bash
-# Run in-kernel tests (45/45) + Linux POSIX compliance TDD test suite (154/154)
+# Run in-kernel tests (45/45) + Linux POSIX compliance TDD test suite (173/173)
 make test
 
 # Or run the complete automated end-to-end verification script:
@@ -200,7 +200,7 @@ To run commands non-interactively in batch mode:
 
 HolyNix is verified on every commit across a **4-runner CI matrix** on GitHub Actions:
 
-| Runner OS | Compiler | In-Kernel (45/45) | POSIX TDD (154/154) | End-to-End Suite | Artifact Generated |
+| Runner OS | Compiler | In-Kernel (45/45) | POSIX TDD (173/173) | End-to-End Suite | Artifact Generated |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Ubuntu Linux** (`ubuntu-latest`) | `gcc` | **PASS** | **PASS** | **PASS** | — |
 | **Ubuntu Linux** (`ubuntu-latest`) | `clang` | **PASS** | **PASS** | **PASS** | `holynix-linux-x86_64` |
@@ -211,7 +211,7 @@ HolyNix is verified on every commit across a **4-runner CI matrix** on GitHub Ac
 
 ## Test-Driven Development (TDD) Compliance Matrix
 
-HolyNix incorporates 13 comprehensive TDD suites verifying 154 compliance assertions:
+HolyNix incorporates 13 comprehensive TDD suites verifying 173 compliance assertions:
 
 | Suite | Category | Verifications | Status |
 | :---: | :--- | :--- | :---: |
@@ -219,15 +219,15 @@ HolyNix incorporates 13 comprehensive TDD suites verifying 154 compliance assert
 | **2** | **Linux Special Devices (`/dev`)** | `/dev/null` (EOF/discard), `/dev/zero`, `/dev/random` entropy | **100% PASS** |
 | **3** | **Linux VFS Semantics** | `O_TRUNC`, `O_APPEND`, directory hierarchy (`..`, `.`), unlinking | **100% PASS** |
 | **4** | **Pipelines & Signals** | Multi-stage pipes (`cat \| grep \| wc`), exit codes (`true`, `false`, `127`), `ps`, `kill` | **100% PASS** |
-| **5** | **Core Builtins** | `head -n 2`, `wc -w`, `wc -l`, `cd` to `$HOME`, `cd -` to `$OLDPWD` | **100% PASS** |
-| **6** | **Advanced Core Utilities** | `tail`, `stat`, `chmod`, `chown`, `date`, `find`, `sort`, `sort -n`, `uniq -c`, `tee`, `seq`, `readlink`, `df`, `du` | **100% PASS** |
+| **5** | **Core Builtins** | `head -n 2`, `wc -w`, `wc -l`, `cd` to `$HOME`, `cd -` to `$OLDPWD`, `grep -i`, `grep -c -v` | **100% PASS** |
+| **6** | **Advanced Core Utilities** | `tail`, `stat`, `chmod`, `chown`, `date`, `find`, `sort`, `sort -n`, `uniq -c`, `tee`, `seq`, `readlink`, `df`, `du`, `diff` | **100% PASS** |
 | **7** | **Scripting & TempleOS Visuals** | `$VAR` expansion, `env`, `<` redirection, `&&`, `\|\|`, `beep`, `godsong`, `donut` 3D wireframe | **100% PASS** |
 | **8** | **Subsystems & Drivers** | `alias`, `history`, `!`, `&` jobs, `sysctl`, `tar`, `ping`, `netstat`, `cron`, `doldoc`, `bible`, `goddoodle`, `redsea`, `memdump`, `disasm`, `hpm` | **100% PASS** |
 | **9** | **Manuals & Network Client** | `man ls`, `man cat`, `apropos raycast`, `whatis curl`, `curl -i` headers, `stty size`, `stty` baud rate | **100% PASS** |
 | **10**| **Security, Loops & Classic Games** | `id`, `groups`, `su root`, `sudo whoami`, `test -f`, `[ -d ]`, `for` loop, `if/then/else`, `castle -m`, `afteregypt`, `flappy`, `wintile` | **100% PASS** |
-| **11**| **Linux Core Text Pipelines** | `cut -d: -f1`, `tr a-z A-Z`, `sed s/find/repl/g`, `basename`, `dirname`, `paste`, `fold -w` | **100% PASS** |
+| **11**| **Linux Core Text Pipelines** | `cut -d: -f1`, `cut -d: -f3`, `tr a-z A-Z`, `tr 0-9 A-J`, `tr -d`, `sed` (global, single, multi-line), `basename`, `dirname`, `paste`, `fold -w` | **100% PASS** |
 | **12**| **Microkernel & Music System** | `/proc/modules`, `lsmod`, `insmod`, `rmmod`, `/proc/vmstat`, `vmstat`, `pstree`, `ulimit`, `ipcs`, `holyfetch`, `play`, `juke`, `screenshot` | **100% PASS** |
-| **13**| **Introspection, Flight & Limits** | `flight` 3D HUD, `matrix` digital rain, `linecnt` 100k LOC limit, `hcbench`, `godword`, `which`, `type`, `hostname`, `sync`, `who`, `w`, `nl`, `xxd`, `time` | **100% PASS** |
+| **13**| **Introspection, Flight & Limits** | `flight -p -r -a` 3D HUD, `matrix` rain, `linecnt` VFS counts, `hcbench`, `godword`, `which` missing errors, `type` alias/builtin/not-found, `hostname` root check & procfs sync, `sync`, `who`, `w`, `nl`, `xxd`, `time` | **100% PASS** |
 
 ---
 

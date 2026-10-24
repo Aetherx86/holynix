@@ -817,7 +817,7 @@ I64 KernelRunTests() {
     /* Test 41: TempleOS 3D Flight Simulator & Digital Rain */
     total++;
     Print("[TEST %lld] TempleOS 3D Flight Simulator & Digital Rain (flight, matrix): ", (long long)total);
-    FlightRun();
+    FlightRun(0, 0, 4500);
     MatrixRun();
     Print("\033[92mPASS\033[0m\n");
     passed++;
