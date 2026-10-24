@@ -17,6 +17,12 @@
 #include "Terminal.HC"
 #include "Editor.HC"
 #include "HolyC_Repl.HC"
+#include "DolDoc.HC"
+#include "Bible.HC"
+#include "GodDoodle.HC"
+#include "RedSea.HC"
+#include "Tar.HC"
+#include "Net.HC"
 #include "Shell.HC"
 
 /* Initial embedded Ramdisk File Assets */
@@ -106,6 +112,21 @@ U0 KernelPopulateRamdisk() {
     VFSCreateFile("/home/terry/hello.HC", "/", (const U8*)g_init_hello_hc, StrLen((const U8*)g_init_hello_hc));
     VFSCreateFile("/home/terry/divine.HC", "/", (const U8*)g_init_divine_hc, StrLen((const U8*)g_init_divine_hc));
     VFSCreateFile("/home/god/commandments.txt", "/", (const U8*)g_init_commandments, StrLen((const U8*)g_init_commandments));
+
+    VFSMkdir("boot", "/");
+    RedSeaCreateSample("/boot/redsea.img");
+
+    static const char welcome_dd[] =
+        "$FG,RED$=== Welcome to TempleOS DolDoc on HolyNix ===$FG$\n"
+        "$FG,YELLOW$Terry Davis Memorial Edition$FG$\n"
+        "$TR,\"Holy Subsystems\"$\n"
+        "$ID,2$$LK,\"Kernel Source\",/src/holyc/Kernel.HC$\n"
+        "$LK,\"Divine Oracle\",/dev/god$\n"
+        "$LK,\"Holy Commandments\",/home/god/commandments.txt$\n"
+        "$ID,-2$\n"
+        "$BK,1$Simplicity is Divine!$BK,0$\n";
+    VFSCreateFile("/home/terry/welcome.DD", "/", (const U8*)welcome_dd, StrLen((const U8*)welcome_dd));
+    VFSCreateFile("/home/terry/.holysh_history", "/", (const U8*)"uname -a\ncat /etc/motd\ngod 5\n", 28);
 }
 
 I64 InitProcessTask(U0 *arg) {
@@ -145,11 +166,11 @@ U0 KernelBoot() {
     KLog("[0.006000] Mounting ProcFS pseudo-filesystem at /proc...\n");
     ProcInit();
 
-    KLog("[0.008000] Populating in-memory RAM rootfs assets...\n");
-    KernelPopulateRamdisk();
-
-    KLog("[0.010000] Initializing Round-Robin Task Scheduler...\n");
+    KLog("[0.008000] Initializing Round-Robin Task Scheduler...\n");
     TaskInit();
+
+    KLog("[0.010000] Populating in-memory RAM rootfs assets...\n");
+    KernelPopulateRamdisk();
 
     KLog("[0.012000] Spawning PID 1 (init task)...\n");
     I64 init_pid = TaskSpawn((const U8*)"init", InitProcessTask, NULL, 0);
@@ -456,6 +477,143 @@ I64 KernelRunTests() {
         } else {
             Print("\033[91mFAIL\033[0m\n");
         }
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 16: DolDoc Markup Translation */
+    total++;
+    Print("[TEST %lld] DolDoc Markup Translation ($FG$, $TR$, $BK$): ", (long long)total);
+    char dd_test[] = "$FG,RED$RedText$FG$ and $BK,1$Blink$BK,0$";
+    char dd_out[256];
+    DolDocRender(dd_test, dd_out, sizeof(dd_out));
+    if (strstr(dd_out, "\033[91m") != NULL && strstr(dd_out, "RedText") != NULL) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 17: KJV Bible Concordance & Oracle */
+    total++;
+    Print("[TEST %lld] KJV Bible Concordance & Scripture Oracle: ", (long long)total);
+    const CBibleVerse *bv = BibleLookup("Genesis", 1, 1);
+    const CBibleVerse *b_rand = BibleGodPassage();
+    if (bv && strstr(bv->text, "heaven and the earth") != NULL && b_rand != NULL) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 18: RedSea 64-bit Flat Filesystem Inspector */
+    total++;
+    Print("[TEST %lld] RedSea Filesystem Driver & Inspector: ", (long long)total);
+    char rs_buf[1024];
+    I64 rs_res = RedSeaInspect("/boot/redsea.img", rs_buf, sizeof(rs_buf));
+    if (rs_res >= 0 && strstr(rs_buf, "VALID REDSEA VOLUME") != NULL) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 19: POSIX USTAR Tar Archiver */
+    total++;
+    Print("[TEST %lld] POSIX USTAR Tar Creation & Extraction: ", (long long)total);
+    I64 tar_c = TarCreate("/tmp/unit_test.tar", "/etc/passwd");
+    char tar_ls[1024];
+    I64 tar_l = TarList("/tmp/unit_test.tar", tar_ls, sizeof(tar_ls));
+    I64 tar_x = TarExtract("/tmp/unit_test.tar", "/tmp/tar_test_out");
+    I64 tar_check = SysOpen((const U8*)"/tmp/tar_test_out/etc/passwd", O_RDONLY);
+    if (tar_check >= 0) SysClose(tar_check);
+    if (tar_c == 0 && tar_l >= 0 && tar_x == 0 && tar_check >= 0) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 20: Kernel Sysctl Tunables & /proc/sys Interface */
+    total++;
+    Print("[TEST %lld] Kernel Sysctl Tunables & /proc/sys Interface: ", (long long)total);
+    I64 sys_fd = SysOpen((const U8*)"/proc/sys/kernel/osname", O_RDONLY);
+    if (sys_fd >= 0) {
+        U8 s_val[32];
+        I64 sn = SysRead(sys_fd, s_val, sizeof(s_val) - 1);
+        SysClose(sys_fd);
+        if (sn > 0 && strstr((char*)s_val, "HolyNix") != NULL) {
+            Print("\033[92mPASS\033[0m\n");
+            passed++;
+        } else {
+            Print("\033[91mFAIL (bad proc sys value)\033[0m\n");
+        }
+    } else {
+        Print("\033[91mFAIL (cannot open /proc/sys/kernel/osname)\033[0m\n");
+    }
+
+    /* Test 21: Simulated Network Stack & ICMP Ping */
+    total++;
+    Print("[TEST %lld] Network Subsystem & ICMP Ping Diagnostics: ", (long long)total);
+    char ping_buf[1024];
+    I64 p_res = NetPing("127.0.0.1", 2, ping_buf, sizeof(ping_buf));
+    if (p_res >= 0 && strstr(ping_buf, "0.0% packet loss") != NULL) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 22: Background Job Control */
+    total++;
+    Print("[TEST %lld] Background Job Control (&, jobs): ", (long long)total);
+    I64 j_pid = TaskSpawn((const U8*)"sleep_bg", NULL, NULL, 0);
+    I64 j_id = JobAdd(j_pid, "sleep 10");
+    CJob *job_ptr = JobGet(j_id);
+    if (j_id > 0 && job_ptr && job_ptr->status == JOB_RUNNING) {
+        JobRemove(j_id);
+        TaskKill(j_pid, SIGTERM);
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 23: Shell Aliases & Dynamic Expansion */
+    total++;
+    Print("[TEST %lld] Shell Aliases & Dynamic Expansion: ", (long long)total);
+    ShellSetAlias("holytest", "echo DivineGlory");
+    const char *al_val = ShellGetAlias("holytest");
+    if (al_val && strcmp(al_val, "echo DivineGlory") == 0) {
+        ShellRemoveAlias("holytest");
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 24: Command History Subsystem */
+    total++;
+    Print("[TEST %lld] Command History Subsystem (history, !): ", (long long)total);
+    TermAddHistory("echo historic_test_42");
+    I64 h_cnt = TermGetHistoryCount();
+    const char *h_last = TermGetHistoryEntry(h_cnt - 1);
+    if (h_cnt > 0 && h_last && strcmp(h_last, "echo historic_test_42") == 0) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 25: Cron Scheduled Task Subsystem */
+    total++;
+    Print("[TEST %lld] Cron Scheduled Task Daemon: ", (long long)total);
+    I64 cr_id = CronAdd(30, "echo cron_tick");
+    char cr_list[512];
+    I64 cr_len = CronList(cr_list, sizeof(cr_list));
+    if (cr_id > 0 && cr_len > 0 && strstr(cr_list, "echo cron_tick") != NULL) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
     } else {
         Print("\033[91mFAIL\033[0m\n");
     }

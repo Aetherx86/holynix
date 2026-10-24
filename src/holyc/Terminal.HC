@@ -19,6 +19,15 @@ static Bool g_templeos_blue_theme = FALSE;
 static U8 g_history[MAX_HISTORY][HISTORY_LINE_LEN];
 static I64 g_history_count = 0;
 
+I64 TermGetHistoryCount() {
+    return g_history_count;
+}
+
+const char *TermGetHistoryEntry(I64 idx) {
+    if (idx < 0 || idx >= g_history_count) return NULL;
+    return (const char*)g_history[idx];
+}
+
 static CRingBuffer *g_dmesg_buf = NULL;
 
 static inline U0 TermWriteRaw(const char *s, I64 len) {

@@ -15,6 +15,9 @@
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE
 #endif
+#ifndef _DARWIN_C_SOURCE
+#define _DARWIN_C_SOURCE
+#endif
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -24,7 +27,14 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <strings.h>
 #include <stdarg.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+char *strcasestr(const char *haystack, const char *needle);
 #include <ctype.h>
 #include <unistd.h>
 #include <fcntl.h>

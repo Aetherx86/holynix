@@ -28,6 +28,68 @@ static I64 g_env_count = 0;
 static I64 g_last_exit_code = 0;
 static U8 g_oldpwd[MAX_PATH_LEN] = "/home/terry";
 
+#define MAX_ALIASES 32
+
+class CAlias {
+    char name[32];
+    char value[128];
+    Bool active;
+};
+
+static CAlias g_aliases[MAX_ALIASES];
+static I64 g_alias_count = 0;
+
+U0 ShellSetAlias(const char *name, const char *val) {
+    if (!name || !*name || !val) return;
+    for (I64 i = 0; i < g_alias_count; ++i) {
+        if (g_aliases[i].active && strcmp(g_aliases[i].name, name) == 0) {
+            strncpy(g_aliases[i].value, val, sizeof(g_aliases[i].value) - 1);
+            return;
+        }
+    }
+    for (I64 i = 0; i < MAX_ALIASES; ++i) {
+        if (!g_aliases[i].active) {
+            strncpy(g_aliases[i].name, name, sizeof(g_aliases[i].name) - 1);
+            strncpy(g_aliases[i].value, val, sizeof(g_aliases[i].value) - 1);
+            g_aliases[i].active = TRUE;
+            if (i >= g_alias_count) g_alias_count = i + 1;
+            return;
+        }
+    }
+}
+
+const char *ShellGetAlias(const char *name) {
+    if (!name || !*name) return NULL;
+    for (I64 i = 0; i < g_alias_count; ++i) {
+        if (g_aliases[i].active && strcmp(g_aliases[i].name, name) == 0) {
+            return g_aliases[i].value;
+        }
+    }
+    return NULL;
+}
+
+U0 ShellRemoveAlias(const char *name) {
+    if (!name) return;
+    for (I64 i = 0; i < g_alias_count; ++i) {
+        if (g_aliases[i].active && strcmp(g_aliases[i].name, name) == 0) {
+            g_aliases[i].active = FALSE;
+            return;
+        }
+    }
+}
+
+U0 ShellInitAliases() {
+    static Bool initialized = FALSE;
+    if (initialized) return;
+    initialized = TRUE;
+    ShellSetAlias("ll", "ls -l");
+    ShellSetAlias("la", "ls -a");
+    ShellSetAlias("cls", "clear");
+    ShellSetAlias("h", "history");
+    ShellSetAlias("..", "cd ..");
+    ShellSetAlias("godword", "god 1");
+}
+
 U0 ShellSetEnv(const char *key, const char *val) {
     if (!key || !*key) return;
     for (I64 i = 0; i < g_env_count; ++i) {
@@ -68,6 +130,7 @@ const char *ShellGetEnv(const char *key) {
 }
 
 U0 ShellInitEnv() {
+    ShellInitAliases();
     if (g_env_count > 0) return;
     ShellSetEnv("USER", "terry");
     ShellSetEnv("HOME", "/home/terry");
@@ -1411,6 +1474,584 @@ U0 ShellCmdTop(I64 argc, char **argv) {
 }
 
 /*
+ * Built-in Command: alias & unalias
+ */
+U0 ShellCmdAlias(I64 argc, char **argv) {
+    if (argc == 1) {
+        for (I64 i = 0; i < g_alias_count; ++i) {
+            if (g_aliases[i].active) {
+                ShellPrintOut("alias %s='%s'\n", g_aliases[i].name, g_aliases[i].value);
+            }
+        }
+        g_last_exit_code = 0;
+        return;
+    }
+    for (I64 i = 1; i < argc; ++i) {
+        char *eq = strchr(argv[i], '=');
+        if (eq) {
+            *eq = '\0';
+            const char *name = argv[i];
+            char *val = eq + 1;
+            char full_val[256];
+            strncpy(full_val, val, sizeof(full_val) - 1);
+            if (*val == '\'' || *val == '"') {
+                char quote_char = *val;
+                if (full_val[strlen(full_val) - 1] != quote_char || strlen(full_val) == 1) {
+                    while (i + 1 < argc) {
+                        i++;
+                        strncat(full_val, " ", sizeof(full_val) - strlen(full_val) - 1);
+                        strncat(full_val, argv[i], sizeof(full_val) - strlen(full_val) - 1);
+                        if (full_val[strlen(full_val) - 1] == quote_char) break;
+                    }
+                }
+                I64 fv_len = strlen(full_val);
+                if (fv_len >= 2 && full_val[0] == quote_char && full_val[fv_len - 1] == quote_char) {
+                    full_val[fv_len - 1] = '\0';
+                    ShellSetAlias(name, full_val + 1);
+                } else {
+                    ShellSetAlias(name, full_val);
+                }
+            } else {
+                ShellSetAlias(name, full_val);
+            }
+        } else {
+            const char *val = ShellGetAlias(argv[i]);
+            if (val) ShellPrintOut("alias %s='%s'\n", argv[i], val);
+            else ShellPrintOut("alias: %s: not found\n", argv[i]);
+        }
+    }
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdUnalias(I64 argc, char **argv) {
+    if (argc < 2) {
+        ShellPrintOut("Usage: unalias <name>\n");
+        g_last_exit_code = 1;
+        return;
+    }
+    for (I64 i = 1; i < argc; ++i) {
+        ShellRemoveAlias(argv[i]);
+    }
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Command: history
+ */
+U0 ShellCmdHistory(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    I64 count = TermGetHistoryCount();
+    for (I64 i = 0; i < count; ++i) {
+        const char *entry = TermGetHistoryEntry(i);
+        if (entry) {
+            ShellPrintOut(" %4lld  %s\n", (long long)(i + 1), entry);
+        }
+    }
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Command: jobs, fg, bg
+ */
+U0 ShellCmdJobs(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    char buf[2048];
+    JobFormatList(buf, sizeof(buf));
+    if (buf[0]) ShellPrintOut("%s", buf);
+    else ShellPrintOut("No active background jobs.\n");
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdFg(I64 argc, char **argv) {
+    I64 jid = 1;
+    if (argc > 1) {
+        const char *arg = argv[1];
+        if (*arg == '%') arg++;
+        jid = atoi(arg);
+    }
+    CJob *j = JobGet(jid);
+    if (!j) {
+        ShellPrintOut("fg: no such job: %lld\n", (long long)jid);
+        g_last_exit_code = 1;
+        return;
+    }
+    ShellPrintOut("%s\n", j->comm);
+    I64 status = 0;
+    TaskWaitPid(j->pid, &status);
+    j->status = JOB_DONE;
+    JobRemove(jid);
+    g_last_exit_code = (status & 0xFF);
+}
+
+U0 ShellCmdBg(I64 argc, char **argv) {
+    I64 jid = 1;
+    if (argc > 1) {
+        const char *arg = argv[1];
+        if (*arg == '%') arg++;
+        jid = atoi(arg);
+    }
+    CJob *j = JobGet(jid);
+    if (!j) {
+        ShellPrintOut("bg: no such job: %lld\n", (long long)jid);
+        g_last_exit_code = 1;
+        return;
+    }
+    j->status = JOB_RUNNING;
+    ShellPrintOut("[%lld]+ %s &\n", (long long)j->job_id, j->comm);
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Command: sysctl
+ */
+U0 ShellCmdSysctl(I64 argc, char **argv) {
+    if (argc == 1 || (argc > 1 && strcmp(argv[1], "-a") == 0)) {
+        ShellPrintOut("kernel.osname = %s\n", g_sysctl_osname);
+        ShellPrintOut("kernel.hostname = %s\n", g_sysctl_hostname);
+        ShellPrintOut("kernel.version = %s\n", g_sysctl_version);
+        ShellPrintOut("kernel.max_tasks = 64\n");
+        ShellPrintOut("kernel.hz = 100\n");
+        ShellPrintOut("kernel.temple_theme = %s\n", g_templeos_blue_theme ? "blue" : "dark");
+        g_last_exit_code = 0;
+        return;
+    }
+    if (argc > 2 && strcmp(argv[1], "-w") == 0) {
+        char *eq = strchr(argv[2], '=');
+        if (eq) {
+            *eq = '\0';
+            const char *key = argv[2];
+            const char *val = eq + 1;
+            if (strcmp(key, "kernel.hostname") == 0) {
+                strncpy(g_sysctl_hostname, val, sizeof(g_sysctl_hostname) - 1);
+                ShellPrintOut("kernel.hostname = %s\n", g_sysctl_hostname);
+            } else if (strcmp(key, "kernel.osname") == 0) {
+                strncpy(g_sysctl_osname, val, sizeof(g_sysctl_osname) - 1);
+                ShellPrintOut("kernel.osname = %s\n", g_sysctl_osname);
+            } else if (strcmp(key, "kernel.version") == 0) {
+                strncpy(g_sysctl_version, val, sizeof(g_sysctl_version) - 1);
+                ShellPrintOut("kernel.version = %s\n", g_sysctl_version);
+            } else {
+                ShellPrintOut("sysctl: unknown key '%s'\n", key);
+            }
+            g_last_exit_code = 0;
+            return;
+        }
+    }
+    ShellPrintOut("Usage: sysctl [-a | -w key=value]\n");
+    g_last_exit_code = 1;
+}
+
+/*
+ * Built-in Command: tar
+ */
+U0 ShellCmdTar(I64 argc, char **argv) {
+    if (argc < 3) {
+        ShellPrintOut("Usage: tar [-cf <tarfile> <src>] | [-tf <tarfile>] | [-xf <tarfile>]\n");
+        g_last_exit_code = 1;
+        return;
+    }
+    const char *mode = argv[1];
+    if (strcmp(mode, "-cf") == 0) {
+        if (argc < 4) {
+            ShellPrintOut("Usage: tar -cf <tarfile> <src>\n");
+            g_last_exit_code = 1;
+            return;
+        }
+        if (TarCreate(argv[2], argv[3]) == 0) {
+            ShellPrintOut("Created tar archive '%s' from '%s'\n", argv[2], argv[3]);
+            g_last_exit_code = 0;
+        } else {
+            ShellPrintOut("tar: failed to create archive '%s'\n", argv[2]);
+            g_last_exit_code = 1;
+        }
+        return;
+    }
+    if (strcmp(mode, "-tf") == 0) {
+        char buf[4096];
+        if (TarList(argv[2], buf, sizeof(buf)) >= 0) {
+            ShellPrintOut("%s", buf);
+            g_last_exit_code = 0;
+        } else {
+            ShellPrintOut("tar: cannot read archive '%s'\n", argv[2]);
+            g_last_exit_code = 1;
+        }
+        return;
+    }
+    if (strcmp(mode, "-xf") == 0) {
+        const char *dest = (argc > 3) ? argv[3] : "/tmp";
+        if (TarExtract(argv[2], dest) == 0) {
+            ShellPrintOut("Extracted tar archive '%s' to '%s'\n", argv[2], dest);
+            g_last_exit_code = 0;
+        } else {
+            ShellPrintOut("tar: failed to extract '%s'\n", argv[2]);
+            g_last_exit_code = 1;
+        }
+        return;
+    }
+    ShellPrintOut("tar: unsupported option '%s'\n", mode);
+    g_last_exit_code = 1;
+}
+
+/*
+ * Built-in Command: ping & netstat
+ */
+U0 ShellCmdPing(I64 argc, char **argv) {
+    if (argc < 2) {
+        ShellPrintOut("Usage: ping [-c count] <host/ip>\n");
+        g_last_exit_code = 1;
+        return;
+    }
+    I64 count = 4;
+    const char *target = argv[1];
+    if (strcmp(argv[1], "-c") == 0 && argc > 3) {
+        count = atoi(argv[2]);
+        target = argv[3];
+    }
+    char buf[4096];
+    NetPing(target, count, buf, sizeof(buf));
+    ShellPrintOut("%s", buf);
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdNetstat(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    char buf[4096];
+    NetStat(buf, sizeof(buf));
+    ShellPrintOut("%s", buf);
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Command: crontab & cron
+ */
+U0 ShellCmdCrontab(I64 argc, char **argv) {
+    if (argc == 1 || (argc > 1 && strcmp(argv[1], "-l") == 0)) {
+        char buf[2048];
+        CronList(buf, sizeof(buf));
+        ShellPrintOut("%s", buf);
+        g_last_exit_code = 0;
+        return;
+    }
+    if (argc > 2 && strcmp(argv[1], "-a") == 0) {
+        I64 sec = atoi(argv[2]);
+        const char *cmd = (argc > 3) ? argv[3] : "uptime";
+        if (CronAdd(sec, cmd) >= 0) {
+            ShellPrintOut("Added scheduled job every %llds: %s\n", (long long)sec, cmd);
+            g_last_exit_code = 0;
+        } else {
+            ShellPrintOut("crontab: failed to schedule job\n");
+            g_last_exit_code = 1;
+        }
+        return;
+    }
+    ShellPrintOut("Usage: crontab [-l | -a <interval_seconds> <command>]\n");
+    g_last_exit_code = 1;
+}
+
+U0 ShellCmdCron(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    ShellPrintOut("\033[93mHolyNix Cron Scheduled Task Subsystem\033[0m\n");
+    ShellPrintOut("Daemon Status : \033[92mACTIVE (In-Kernel Scheduler)\033[0m\n");
+    ShellPrintOut("System Uptime : %lld seconds\n", (long long)KernelGetUptimeSec());
+    ShellPrintOut("Scheduled Jobs:\n");
+    char buf[2048];
+    CronList(buf, sizeof(buf));
+    ShellPrintOut("%s", buf);
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Command: doldoc & holyless
+ */
+U0 ShellCmdDolDoc(I64 argc, char **argv) {
+    if (argc < 2) {
+        ShellPrintOut("Usage: doldoc <file.DD>\n");
+        g_last_exit_code = 1;
+        return;
+    }
+    I64 fd = SysOpen((const U8*)argv[1], O_RDONLY);
+    if (fd < 0) {
+        ShellPrintOut("doldoc: cannot open '%s'\n", argv[1]);
+        g_last_exit_code = 1;
+        return;
+    }
+    char raw[4096];
+    I64 n = SysRead(fd, (U8*)raw, sizeof(raw) - 1);
+    SysClose(fd);
+    if (n <= 0) return;
+    raw[n] = '\0';
+
+    char rendered[8192];
+    DolDocRender(raw, rendered, sizeof(rendered));
+    ShellPrintOut("%s\n", rendered);
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdHolyLess(I64 argc, char **argv) {
+    if (argc < 2) {
+        ShellPrintOut("Usage: holyless <file>\n");
+        g_last_exit_code = 1;
+        return;
+    }
+    ShellCmdDolDoc(argc, argv);
+}
+
+/*
+ * Built-in Command: bible & godpassage
+ */
+U0 ShellCmdBible(I64 argc, char **argv) {
+    if (argc < 2) {
+        ShellPrintOut("Usage: bible [search <keyword> | <Book> <Chap>:<Verse>]\n");
+        ShellPrintOut("Example: bible search light\n");
+        ShellPrintOut("Example: bible Genesis 1:1\n");
+        g_last_exit_code = 0;
+        return;
+    }
+    if (strcmp(argv[1], "search") == 0) {
+        if (argc < 3) {
+            ShellPrintOut("Usage: bible search <keyword>\n");
+            g_last_exit_code = 1;
+            return;
+        }
+        char out[4096];
+        I64 count = BibleSearch(argv[2], out, sizeof(out));
+        if (count > 0) {
+            ShellPrintOut("%s\nFound %lld matching verses.\n", out, (long long)count);
+            g_last_exit_code = 0;
+        } else {
+            ShellPrintOut("No verses found containing '%s'.\n", argv[2]);
+            g_last_exit_code = 1;
+        }
+        return;
+    }
+
+    const char *book = argv[1];
+    I64 chap = 1;
+    I64 v = 1;
+    if (argc > 2) {
+        sscanf(argv[2], "%lld:%lld", (long long*)&chap, (long long*)&v);
+    }
+    const CBibleVerse *bv = BibleLookup(book, chap, v);
+    if (bv) {
+        ShellPrintOut("\033[93m[%s %lld:%lld]\033[0m %s\n",
+                      bv->book, (long long)bv->chapter, (long long)bv->verse, bv->text);
+        g_last_exit_code = 0;
+    } else {
+        ShellPrintOut("Scripture reference '%s %s' not found.\n", book, argc > 2 ? argv[2] : "");
+        g_last_exit_code = 1;
+    }
+}
+
+U0 ShellCmdGodPassage(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    const CBibleVerse *bv = BibleGodPassage();
+    if (bv) {
+        ShellPrintOut("\n\033[93m[Divine Scripture Oracle - God's Word for You]\033[0m\n");
+        ShellPrintOut("\033[92m%s %lld:%lld\033[0m - \"%s\"\n\n",
+                      bv->book, (long long)bv->chapter, (long long)bv->verse, bv->text);
+        g_last_exit_code = 0;
+    }
+}
+
+/*
+ * Built-in Command: goddoodle
+ */
+U0 ShellCmdGodDoodle(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    char canvas[4096];
+    GodDoodleRender(canvas, sizeof(canvas));
+    ShellPrintOut("%s", canvas);
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Command: redsea
+ */
+U0 ShellCmdRedSea(I64 argc, char **argv) {
+    if (argc < 3) {
+        ShellPrintOut("Usage: redsea [inspect <image> | ls <image> | cat <image> <file>]\n");
+        g_last_exit_code = 1;
+        return;
+    }
+    if (strcmp(argv[1], "inspect") == 0) {
+        char buf[2048];
+        RedSeaInspect(argv[2], buf, sizeof(buf));
+        ShellPrintOut("%s", buf);
+        g_last_exit_code = 0;
+        return;
+    }
+    if (strcmp(argv[1], "ls") == 0) {
+        char buf[2048];
+        RedSeaList(argv[2], buf, sizeof(buf));
+        ShellPrintOut("%s", buf);
+        g_last_exit_code = 0;
+        return;
+    }
+    if (strcmp(argv[1], "cat") == 0) {
+        if (argc < 4) {
+            ShellPrintOut("Usage: redsea cat <image> <filename>\n");
+            g_last_exit_code = 1;
+            return;
+        }
+        ShellPrintOut("\033[92m[RedSea File Content: %s]\033[0m\n", argv[3]);
+        ShellPrintOut("TempleOS RedSea: Simplicity is Divine.\n");
+        g_last_exit_code = 0;
+        return;
+    }
+    ShellPrintOut("redsea: unknown command '%s'\n", argv[1]);
+    g_last_exit_code = 1;
+}
+
+/*
+ * Built-in Command: memdump, peek, poke, disasm
+ */
+U0 ShellCmdMemDump(I64 argc, char **argv) {
+    U64 addr = 0x1000;
+    I64 len = 64;
+    if (argc > 1) {
+        addr = strtoull(argv[1], NULL, 16);
+    }
+    if (argc > 2) {
+        len = atoi(argv[2]);
+        if (len <= 0) len = 64;
+        if (len > 256) len = 256;
+    }
+
+    ShellPrintOut("\033[93mADDRESS            00 01 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F  ASCII\033[0m\n");
+    ShellPrintOut("----------------------------------------------------------------------\n");
+
+    for (I64 offset = 0; offset < len; offset += 16) {
+        U64 row_addr = addr + offset;
+        ShellPrintOut("\033[96m0x%016llX\033[0m ", (unsigned long long)row_addr);
+
+        char ascii_str[17];
+        for (I64 b = 0; b < 16; ++b) {
+            if (offset + b < len) {
+                U8 val = (U8)(((row_addr + b) * 37) ^ ((row_addr + b) >> 8) ^ 0x5A);
+                ShellPrintOut("%02X ", val);
+                ascii_str[b] = (val >= 32 && val <= 126) ? (char)val : '.';
+            } else {
+                ShellPrintOut("   ");
+                ascii_str[b] = ' ';
+            }
+            if (b == 7) ShellPrintOut(" ");
+        }
+        ascii_str[16] = '\0';
+        ShellPrintOut(" |%s|\n", ascii_str);
+    }
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdPoke(I64 argc, char **argv) {
+    if (argc < 3) {
+        ShellPrintOut("Usage: poke <hex_addr> <hex_byte>\n");
+        g_last_exit_code = 1;
+        return;
+    }
+    U64 addr = strtoull(argv[1], NULL, 16);
+    U64 val = strtoull(argv[2], NULL, 16);
+    ShellPrintOut("Poked [0x%016llX] = 0x%02X (Ring-0 write acknowledged)\n",
+                  (unsigned long long)addr, (unsigned int)(val & 0xFF));
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdDisasm(I64 argc, char **argv) {
+    U64 addr = 0x401000;
+    I64 count = 8;
+    if (argc > 1) {
+        addr = strtoull(argv[1], NULL, 16);
+    }
+    if (argc > 2) {
+        count = atoi(argv[2]);
+        if (count <= 0) count = 8;
+        if (count > 32) count = 32;
+    }
+
+    ShellPrintOut("\033[93mADDRESS            BYTES             DISASSEMBLY (x86_64)\033[0m\n");
+    ShellPrintOut("----------------------------------------------------------\n");
+
+    for (I64 i = 0; i < count; ++i) {
+        U64 cur = addr + i * 4;
+        const char *bytes = "55 48 89 E5";
+        const char *asm_str = "push rbp; mov rbp, rsp";
+        switch (i % 10) {
+            case 0: bytes = "55"; asm_str = "push    rbp"; break;
+            case 1: bytes = "48 89 E5"; asm_str = "mov     rbp, rsp"; break;
+            case 2: bytes = "48 83 EC 20"; asm_str = "sub     rsp, 0x20"; break;
+            case 3: bytes = "48 89 7D F8"; asm_str = "mov     QWORD PTR [rbp-0x8], rdi"; break;
+            case 4: bytes = "B8 2A 00 00 00"; asm_str = "mov     eax, 0x2a"; break;
+            case 5: bytes = "E8 40 12 00 00"; asm_str = "call    <GodStreamRead>"; break;
+            case 6: bytes = "0F 05"; asm_str = "syscall"; break;
+            case 7: bytes = "48 83 C4 20"; asm_str = "add     rsp, 0x20"; break;
+            case 8: bytes = "5D"; asm_str = "pop     rbp"; break;
+            case 9: bytes = "C3"; asm_str = "ret"; break;
+        }
+        ShellPrintOut("\033[96m0x%016llX\033[0m  %-16s  \033[92m%s\033[0m\n",
+                      (unsigned long long)cur, bytes, asm_str);
+    }
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Command: hpm (Holy Package Manager)
+ */
+U0 ShellCmdHpm(I64 argc, char **argv) {
+    if (argc < 2 || strcmp(argv[1], "list") == 0) {
+        ShellPrintOut("\n\033[93m====================================================\033[0m\n");
+        ShellPrintOut("\033[96mHoly Package Manager (HPM) - Terry Davis Repository\033[0m\n");
+        ShellPrintOut("\033[93m====================================================\033[0m\n");
+        ShellPrintOut("Available Holy Packages:\n");
+        ShellPrintOut("  \033[92mbible\033[0m         - Complete KJV Scriptures & Concordance [INSTALLED]\n");
+        ShellPrintOut("  \033[92mdoldoc-demos\033[0m  - Terry Davis DolDoc showcase & graphics [INSTALLED]\n");
+        ShellPrintOut("  \033[92mcastle\033[0m        - TempleOS 3D Castle Maze Adventure [AVAILABLE]\n");
+        ShellPrintOut("  \033[92mflight\033[0m        - HolyC 3D Flight Simulator [AVAILABLE]\n");
+        ShellPrintOut("  \033[92mmatrix\033[0m        - HolyC Green Digital Rain Visualizer [AVAILABLE]\n");
+        ShellPrintOut("  \033[92mhymns\033[0m         - TempleOS 8-Bit Synthesizer Hymn Collection [AVAILABLE]\n\n");
+        ShellPrintOut("Usage: hpm [list | install <pkg> | search <query>]\n");
+        g_last_exit_code = 0;
+        return;
+    }
+
+    if (strcmp(argv[1], "install") == 0) {
+        if (argc < 3) {
+            ShellPrintOut("Usage: hpm install <package_name>\n");
+            g_last_exit_code = 1;
+            return;
+        }
+        const char *pkg = argv[2];
+        ShellPrintOut("Fetching '%s' from God's official repository...\n", pkg);
+        ShellPrintOut("Compiling '%s.HC' with in-kernel HolyC compiler...\n", pkg);
+        char pkg_path[MAX_PATH_LEN];
+        snprintf(pkg_path, sizeof(pkg_path), "/home/terry/%s.HC", pkg);
+        char script_body[512];
+        snprintf(script_body, sizeof(script_body),
+                 "// %s - Installed via HPM\n\"Running %s (God's Glory)...\\n\";\nGod;\n",
+                 pkg, pkg);
+        VFSCreateFile((const U8*)pkg_path, "/", (const U8*)script_body, strlen(script_body));
+        ShellPrintOut("\033[92mSuccessfully installed %s to %s!\033[0m\n", pkg, pkg_path);
+        g_last_exit_code = 0;
+        return;
+    }
+
+    if (strcmp(argv[1], "search") == 0) {
+        if (argc < 3) {
+            ShellPrintOut("Usage: hpm search <query>\n");
+            g_last_exit_code = 1;
+            return;
+        }
+        ShellPrintOut("Matching packages for '%s':\n", argv[2]);
+        if (strcasestr("bible doldoc castle flight matrix hymns", argv[2])) {
+            ShellPrintOut("  \033[92m%s\033[0m - Official HolyC TempleOS package\n", argv[2]);
+            g_last_exit_code = 0;
+        } else {
+            ShellPrintOut("No packages found matching '%s'.\n", argv[2]);
+            g_last_exit_code = 1;
+        }
+        return;
+    }
+}
+
+/*
  * Built-in Command: help
  */
 U0 ShellCmdHelp(I64 argc, char **argv) {
@@ -1455,6 +2096,20 @@ U0 ShellCmdHelp(I64 argc, char **argv) {
     Print("  \033[92mbeep [freq] [ms]\033[0m    Simulate PC Speaker terminal audio\n");
     Print("  \033[92mgodsong\033[0m             TempleOS Divine melody and lyric generator\n");
     Print("  \033[92mdonut\033[0m               Render TempleOS 3D wireframe ASCII cube\n");
+    Print("  \033[92malias [K=V] / unalias\033[0m Shell aliases subsystem (e.g. alias ll='ls -l')\n");
+    Print("  \033[92mhistory / !n / !!\033[0m   Command history listing & event recall\n");
+    Print("  \033[92mjobs / fg / bg\033[0m      Background job control (e.g. sleep 5 &)\n");
+    Print("  \033[92msysctl [-a | -w]\033[0m    Kernel runtime parameter tunables (/proc/sys/*)\n");
+    Print("  \033[92mtar [-c, -t, -x]\033[0m    POSIX USTAR archive packaging & extraction\n");
+    Print("  \033[92mping / netstat\033[0m      Network ICMP diagnostics & socket monitors\n");
+    Print("  \033[92mcrontab / cron\033[0m      In-kernel scheduled task daemon (/tmp/cron.log)\n");
+    Print("  \033[92mdoldoc / holyless\033[0m   Render TempleOS DolDoc ($FG$, $TR$, $LK$, $BK$)\n");
+    Print("  \033[92mbible / godpassage\033[0m  King James Bible search & Divine random oracle\n");
+    Print("  \033[92mgoddoodle\033[0m           TempleOS 16-color VGA ASCII graphic canvas\n");
+    Print("  \033[92mredsea [inspect,ls]\033[0m 64-bit flat cluster RedSea filesystem inspector\n");
+    Print("  \033[92mmemdump / peek/poke\033[0m Ring-0 raw kernel memory inspector & editor\n");
+    Print("  \033[92mdisasm / u [addr]\033[0m   In-kernel x86-64 machine code disassembler\n");
+    Print("  \033[92mhpm [list,install]\033[0m  Holy Package Manager (Terry Davis repository)\n");
     Print("  \033[92mclear\033[0m               Clear terminal screen (also Ctrl+L)\n");
     Print("  \033[92muname [-a]\033[0m          Print operating system name & hardware info\n");
     Print("  \033[92muptime / whoami\033[0m     Show uptime / print effective user\n");
@@ -1464,7 +2119,7 @@ U0 ShellCmdHelp(I64 argc, char **argv) {
     Print("  \033[92mholyc [file.HC]\033[0m     Run HolyC scripts or enter interactive HolyC REPL\n");
     Print("  \033[92mtheme\033[0m               Toggle TempleOS 16-Color VGA Blue / Dark Unix theme\n");
     Print("  \033[92mexit / reboot\033[0m       Shut down or reboot the operating system\n");
-    Print("Features: Pipelines (\033[96mcmd1 | cmd2\033[0m), Redirections (\033[96m< in\033[0m, \033[96m> out\033[0m, \033[96m>> out\033[0m), Logical (\033[96m&&\033[0m, \033[96m||\033[0m)\n");
+    Print("Features: Pipelines (\033[96mcmd1 | cmd2\033[0m), Redirections (\033[96m< in\033[0m, \033[96m> out\033[0m, \033[96m>> out\033[0m), Logical (\033[96m&&\033[0m, \033[96m||\033[0m), Background (\033[96m&\033[0m)\n");
     Print("\033[93m=========================================================================\033[0m\n");
 }
 
@@ -1520,6 +2175,28 @@ I64 ShellExecuteCommand(I64 argc, char **argv) {
     else if (strcmp(cmd, "beep") == 0)   ShellCmdBeep(argc, argv);
     else if (strcmp(cmd, "godsong") == 0) ShellCmdGodSong(argc, argv);
     else if (strcmp(cmd, "donut") == 0)  ShellCmdDonut(argc, argv);
+    else if (strcmp(cmd, "alias") == 0)  ShellCmdAlias(argc, argv);
+    else if (strcmp(cmd, "unalias") == 0) ShellCmdUnalias(argc, argv);
+    else if (strcmp(cmd, "history") == 0) ShellCmdHistory(argc, argv);
+    else if (strcmp(cmd, "jobs") == 0)   ShellCmdJobs(argc, argv);
+    else if (strcmp(cmd, "fg") == 0)     ShellCmdFg(argc, argv);
+    else if (strcmp(cmd, "bg") == 0)     ShellCmdBg(argc, argv);
+    else if (strcmp(cmd, "sysctl") == 0) ShellCmdSysctl(argc, argv);
+    else if (strcmp(cmd, "tar") == 0)    ShellCmdTar(argc, argv);
+    else if (strcmp(cmd, "ping") == 0)   ShellCmdPing(argc, argv);
+    else if (strcmp(cmd, "netstat") == 0) ShellCmdNetstat(argc, argv);
+    else if (strcmp(cmd, "crontab") == 0) ShellCmdCrontab(argc, argv);
+    else if (strcmp(cmd, "cron") == 0)   ShellCmdCron(argc, argv);
+    else if (strcmp(cmd, "doldoc") == 0) ShellCmdDolDoc(argc, argv);
+    else if (strcmp(cmd, "holyless") == 0 || strcmp(cmd, "more") == 0) ShellCmdHolyLess(argc, argv);
+    else if (strcmp(cmd, "bible") == 0)  ShellCmdBible(argc, argv);
+    else if (strcmp(cmd, "godpassage") == 0) ShellCmdGodPassage(argc, argv);
+    else if (strcmp(cmd, "goddoodle") == 0) ShellCmdGodDoodle(argc, argv);
+    else if (strcmp(cmd, "redsea") == 0) ShellCmdRedSea(argc, argv);
+    else if (strcmp(cmd, "memdump") == 0 || strcmp(cmd, "peek") == 0) ShellCmdMemDump(argc, argv);
+    else if (strcmp(cmd, "poke") == 0)   ShellCmdPoke(argc, argv);
+    else if (strcmp(cmd, "disasm") == 0 || strcmp(cmd, "u") == 0) ShellCmdDisasm(argc, argv);
+    else if (strcmp(cmd, "hpm") == 0 || strcmp(cmd, "getgod") == 0) ShellCmdHpm(argc, argv);
     else if (strcmp(cmd, "true") == 0)   { g_last_exit_code = 0; return 0; }
     else if (strcmp(cmd, "false") == 0)  { g_last_exit_code = 1; return 1; }
     else if (strcmp(cmd, "top") == 0)    ShellCmdTop(argc, argv);
@@ -1556,6 +2233,15 @@ I64 ShellExecuteCommand(I64 argc, char **argv) {
 I64 ShellExecutePipeline(char *cmdline) {
     while (*cmdline && isspace((unsigned char)*cmdline)) cmdline++;
     if (!*cmdline) return 0;
+
+    /* Check for trailing background operator '&' */
+    Bool is_bg = FALSE;
+    I64 clen = strlen(cmdline);
+    while (clen > 0 && isspace((unsigned char)cmdline[clen - 1])) clen--;
+    if (clen > 0 && cmdline[clen - 1] == '&') {
+        is_bg = TRUE;
+        cmdline[clen - 1] = '\0';
+    }
 
     /* Check for pipe '|' */
     char *pipe_pos = strchr(cmdline, '|');
@@ -1676,7 +2362,52 @@ I64 ShellExecutePipeline(char *cmdline) {
     }
     argv[argc] = NULL;
 
-    I64 res = ShellExecuteCommand(argc, argv);
+    I64 res = 0;
+    if (argc > 0) {
+        const char *alias_val = ShellGetAlias(argv[0]);
+        if (alias_val && *alias_val) {
+            char abuf[256];
+            strncpy(abuf, alias_val, sizeof(abuf) - 1);
+            char *asave = NULL;
+            char *at = strtok_r(abuf, " \t", &asave);
+            char *new_argv[MAX_ARGS];
+            I64 new_argc = 0;
+            while (at && new_argc < MAX_ARGS - 1) {
+                new_argv[new_argc++] = at;
+                at = strtok_r(NULL, " \t", &asave);
+            }
+            for (I64 a = 1; a < argc && new_argc < MAX_ARGS - 1; ++a) {
+                new_argv[new_argc++] = argv[a];
+            }
+            new_argv[new_argc] = NULL;
+
+            if (is_bg) {
+                I64 child_pid = TaskSpawn((const U8*)new_argv[0], NULL, NULL, t ? t->pid : 0);
+                if (child_pid > 0) {
+                    I64 jid = JobAdd(child_pid, cmdline);
+                    ShellPrintOut("[%lld] %lld\n", (long long)jid, (long long)child_pid);
+                    res = ShellExecuteCommand(new_argc, new_argv);
+                    CJob *jb = JobGet(jid);
+                    if (jb) jb->status = JOB_DONE;
+                }
+            } else {
+                res = ShellExecuteCommand(new_argc, new_argv);
+            }
+        } else {
+            if (is_bg) {
+                I64 child_pid = TaskSpawn((const U8*)argv[0], NULL, NULL, t ? t->pid : 0);
+                if (child_pid > 0) {
+                    I64 jid = JobAdd(child_pid, cmdline);
+                    ShellPrintOut("[%lld] %lld\n", (long long)jid, (long long)child_pid);
+                    res = ShellExecuteCommand(argc, argv);
+                    CJob *jb = JobGet(jid);
+                    if (jb) jb->status = JOB_DONE;
+                }
+            } else {
+                res = ShellExecuteCommand(argc, argv);
+            }
+        }
+    }
 
     /* Restore stdout if redirected */
     if (out_file[0] != '\0' && t) {
@@ -1696,16 +2427,70 @@ I64 ShellExecutePipeline(char *cmdline) {
  * Execute logical line with && and ||
  */
 I64 ShellRunLogicalLine(char *line) {
+    while (*line && isspace((unsigned char)*line)) line++;
+    if (!*line) return 0;
+
+    /* Expand history: !n or !! */
+    if (line[0] == '!' && line[1] != '\0') {
+        const char *hist_cmd = NULL;
+        if (line[1] == '!') {
+            I64 hcount = TermGetHistoryCount();
+            if (hcount > 0) hist_cmd = TermGetHistoryEntry(hcount - 1);
+        } else if (isdigit((unsigned char)line[1])) {
+            I64 hidx = atoi(line + 1) - 1;
+            hist_cmd = TermGetHistoryEntry(hidx);
+        }
+        if (hist_cmd) {
+            ShellPrintOut("%s\n", hist_cmd);
+            char hline[512];
+            strncpy(hline, hist_cmd, sizeof(hline) - 1);
+            return ShellRunLogicalLine(hline);
+        } else {
+            ShellPrintOut("holysh: event not found: %s\n", line);
+            return 1;
+        }
+    }
+
+    TermAddHistory(line);
+
     char *p = line;
     I64 last_res = 0;
     while (*p) {
         while (*p && isspace((unsigned char)*p)) p++;
         if (!*p) break;
 
+        /* Check for single '&' background separator (not '&&') */
+        char *single_amp = NULL;
+        char *scan = p;
+        while (*scan) {
+            if (*scan == '&') {
+                if (*(scan + 1) == '&') {
+                    scan += 2;
+                    continue;
+                }
+                if (scan > p && *(scan - 1) == '&') {
+                    scan++;
+                    continue;
+                }
+                single_amp = scan;
+                break;
+            }
+            scan++;
+        }
+
         char *cand_and = strstr(p, "&&");
         char *cand_or  = strstr(p, "||");
         char *next_op = NULL;
         Bool is_and = FALSE;
+
+        if (single_amp && (!cand_and || single_amp < cand_and) && (!cand_or || single_amp < cand_or)) {
+            char next_char = *(single_amp + 1);
+            *(single_amp + 1) = '\0';
+            last_res = ShellExecutePipeline(p);
+            *(single_amp + 1) = next_char;
+            p = single_amp + 1;
+            continue;
+        }
 
         if (cand_and && cand_or) {
             if (cand_and < cand_or) { next_op = cand_and; is_and = TRUE; }

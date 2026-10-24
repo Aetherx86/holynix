@@ -351,6 +351,100 @@ static void test_linux_scripting_and_templeos(void) {
     ASSERT_STR_CONTAINS(out, "3D Divine Cube", "donut renders 3D ASCII wireframe");
 }
 
+/* =========================================================================
+ * 8. Advanced TempleOS & Linux Subsystems
+ * ========================================================================= */
+static void test_linux_advanced_subsystems(void) {
+    printf(COLOR_CYAN "\n=== [TDD Suite 8] Advanced TempleOS & Linux Subsystems ===" COLOR_RESET "\n");
+    char out[4096];
+
+    /* 8.1 Shell Aliases (alias, unalias) */
+    exec_holy_unix("alias", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "alias ll='ls -l'", "alias command lists default aliases");
+
+    exec_holy_unix("alias mycustom='echo CustomSuccess'; mycustom", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "CustomSuccess", "custom alias definition and expansion works");
+
+    exec_holy_unix("alias tempal=echo; unalias tempal; tempal", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "command not found: tempal", "unalias removes defined alias");
+
+    /* 8.2 Command History & Recall */
+    exec_holy_unix("uname -a; history", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "uname -a", "history records and lists past commands");
+
+    exec_holy_unix("whoami; !!", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "terry", "!! history expansion re-executes previous command");
+
+    /* 8.3 Background Job Control (&, jobs) */
+    exec_holy_unix("sleep 1 & jobs", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "[1]", "background operator & spawns job and jobs reports it");
+
+    /* 8.4 Kernel Sysctl Tunables & /proc/sys */
+    exec_holy_unix("sysctl -a", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "kernel.osname = HolyNix", "sysctl -a reports kernel parameter tunables");
+
+    exec_holy_unix("cat /proc/sys/kernel/hostname", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "holy-unix", "/proc/sys/kernel/hostname returns tunable value");
+
+    /* 8.5 POSIX USTAR Tar Archiver */
+    exec_holy_unix("tar -cf /tmp/test_arc.tar /etc/passwd; tar -tf /tmp/test_arc.tar", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "etc/passwd", "tar -cf creates archive and tar -tf lists entries");
+
+    exec_holy_unix("tar -cf /tmp/test_arc2.tar /etc/passwd; tar -xf /tmp/test_arc2.tar /tmp/extract_dest; cat /tmp/extract_dest/etc/passwd", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "Terry A. Davis", "tar -xf extracts file and preserves content");
+
+    /* 8.6 Simulated Network & Ping */
+    exec_holy_unix("ping -c 2 localhost", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "64 bytes from 127.0.0.1", "ping outputs ICMP echo replies");
+    ASSERT_STR_CONTAINS(out, "0.0% packet loss", "ping calculates 0.0% packet loss");
+
+    exec_holy_unix("netstat", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "eth0", "netstat reports active interfaces and sockets");
+
+    /* 8.7 Cron Scheduled Tasks */
+    exec_holy_unix("crontab -l", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "HolyNix kernel health check", "crontab -l displays active scheduled jobs");
+
+    /* 8.8 TempleOS DolDoc Markup Renderer */
+    exec_holy_unix("doldoc /home/terry/welcome.DD", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "Welcome to TempleOS DolDoc", "doldoc renders formatted DolDoc documents");
+
+    /* 8.9 KJV Bible Concordance & Oracle */
+    exec_holy_unix("bible Genesis 1:1", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "In the beginning God created", "bible looks up scripture chapter and verse");
+
+    exec_holy_unix("bible search light", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "Let there be light", "bible search finds matching scripture passages");
+
+    exec_holy_unix("godpassage", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "Divine Scripture Oracle", "godpassage returns randomized divine passage");
+
+    /* 8.10 TempleOS God Doodle */
+    exec_holy_unix("goddoodle", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "DIVINE TEMPLEOS GOD DOODLE CANVAS", "goddoodle generates 16-color ASCII art");
+
+    /* 8.11 RedSea 64-bit Filesystem Driver */
+    exec_holy_unix("redsea inspect /boot/redsea.img", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "VALID REDSEA VOLUME", "redsea inspect validates 64-bit RedSea volume");
+
+    exec_holy_unix("redsea ls /boot/redsea.img", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "KERNEL.BIN", "redsea ls lists directory entries in RedSea image");
+
+    /* 8.12 Ring-0 Memory Peeker & Disassembler */
+    exec_holy_unix("memdump 0x1000 16", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "0x0000000000001000", "memdump displays hex and ASCII memory bytes");
+
+    exec_holy_unix("disasm 0x401000 2", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "push    rbp", "disasm decodes x86-64 machine instructions");
+
+    /* 8.13 Holy Package Manager (HPM) */
+    exec_holy_unix("hpm list", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "Holy Package Manager", "hpm list displays holy package repository");
+
+    exec_holy_unix("hpm install castle", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "Successfully installed castle", "hpm install compiles and installs holy package");
+}
+
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
     printf(COLOR_YELLOW "========================================================\n");
@@ -364,6 +458,7 @@ int main(int argc, char **argv) {
     test_linux_shell_builtins();
     test_linux_advanced_utilities();
     test_linux_scripting_and_templeos();
+    test_linux_advanced_subsystems();
 
     printf("\n" COLOR_YELLOW "========================================================\n");
     printf("  TDD Test Results: " COLOR_GREEN "%d Passed" COLOR_RESET ", "

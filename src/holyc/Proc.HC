@@ -103,6 +103,71 @@ static I64 ProcTasksRead(CVFSInode *inode, U8 *buf, I64 count, I64 offset) {
     return result;
 }
 
+static char g_sysctl_osname[64] = "HolyNix";
+static char g_sysctl_hostname[64] = "holy-unix";
+static char g_sysctl_version[64] = "1.0.0-holyc";
+
+static I64 ProcNetDevRead(CVFSInode *inode, U8 *buf, I64 count, I64 offset) {
+    (U0)inode;
+    static const char net_str[] =
+        "Inter-|   Receive                                                |  Transmit\n"
+        " face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed\n"
+        "    lo:    8192     128    0    0    0     0          0         0     8192     128    0    0    0     0       0          0\n"
+        "  eth0:   65536    1024    0    0    0     0          0         0    49152     896    0    0    0     0       0          0\n";
+    I64 len = StrLen((const U8*)net_str);
+    if (offset >= len) return 0;
+    I64 to_copy = Min(len - offset, count);
+    MemCpy(buf, (const U8*)net_str + offset, to_copy);
+    return to_copy;
+}
+
+static I64 ProcNetTcpRead(CVFSInode *inode, U8 *buf, I64 count, I64 offset) {
+    (U0)inode;
+    static const char tcp_str[] =
+        "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
+        "   0: 00000000:0016 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 1204 1 00000000 100 0 0 10 -1\n"
+        "   1: 00000000:0050 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 1205 1 00000000 100 0 0 10 -1\n"
+        "   2: 00000000:1E61 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 7777 1 00000000 100 0 0 10 -1\n";
+    I64 len = StrLen((const U8*)tcp_str);
+    if (offset >= len) return 0;
+    I64 to_copy = Min(len - offset, count);
+    MemCpy(buf, (const U8*)tcp_str + offset, to_copy);
+    return to_copy;
+}
+
+static I64 ProcSysOsnameRead(CVFSInode *inode, U8 *buf, I64 count, I64 offset) {
+    (U0)inode;
+    char tmp[128];
+    snprintf(tmp, sizeof(tmp), "%s\n", g_sysctl_osname);
+    I64 len = StrLen((const U8*)tmp);
+    if (offset >= len) return 0;
+    I64 to_copy = Min(len - offset, count);
+    MemCpy(buf, (const U8*)tmp + offset, to_copy);
+    return to_copy;
+}
+
+static I64 ProcSysHostnameRead(CVFSInode *inode, U8 *buf, I64 count, I64 offset) {
+    (U0)inode;
+    char tmp[128];
+    snprintf(tmp, sizeof(tmp), "%s\n", g_sysctl_hostname);
+    I64 len = StrLen((const U8*)tmp);
+    if (offset >= len) return 0;
+    I64 to_copy = Min(len - offset, count);
+    MemCpy(buf, (const U8*)tmp + offset, to_copy);
+    return to_copy;
+}
+
+static I64 ProcSysVersionRead(CVFSInode *inode, U8 *buf, I64 count, I64 offset) {
+    (U0)inode;
+    char tmp[128];
+    snprintf(tmp, sizeof(tmp), "%s\n", g_sysctl_version);
+    I64 len = StrLen((const U8*)tmp);
+    if (offset >= len) return 0;
+    I64 to_copy = Min(len - offset, count);
+    MemCpy(buf, (const U8*)tmp + offset, to_copy);
+    return to_copy;
+}
+
 U0 ProcRegisterNode(const U8 *name, DeviceReadFn rfn) {
     I64 proc_dir = VFSResolvePath("/proc", "/");
     if (proc_dir < 0) return;
@@ -122,6 +187,49 @@ U0 ProcInit() {
     ProcRegisterNode("meminfo", ProcMemInfoRead);
     ProcRegisterNode("cpuinfo", ProcCpuInfoRead);
     ProcRegisterNode("tasks", ProcTasksRead);
+
+    /* Create /proc/net and /proc/sys/kernel directories */
+    VFSMkdir("net", "/proc");
+    VFSMkdir("sys", "/proc");
+    VFSMkdir("kernel", "/proc/sys");
+
+    I64 net_dir = VFSResolvePath("/proc/net", "/");
+    if (net_dir >= 0) {
+        I64 inum_dev = VFSAllocInode("dev", VFS_PROC, net_dir);
+        if (inum_dev >= 0) {
+            CVFSInode *node = VFSGetInode(inum_dev);
+            node->read_fn = ProcNetDevRead;
+            node->permissions = 0444;
+        }
+        I64 inum_tcp = VFSAllocInode("tcp", VFS_PROC, net_dir);
+        if (inum_tcp >= 0) {
+            CVFSInode *node = VFSGetInode(inum_tcp);
+            node->read_fn = ProcNetTcpRead;
+            node->permissions = 0444;
+        }
+    }
+
+    I64 sys_dir = VFSResolvePath("/proc/sys/kernel", "/");
+    if (sys_dir >= 0) {
+        I64 inum_os = VFSAllocInode("osname", VFS_PROC, sys_dir);
+        if (inum_os >= 0) {
+            CVFSInode *node = VFSGetInode(inum_os);
+            node->read_fn = ProcSysOsnameRead;
+            node->permissions = 0644;
+        }
+        I64 inum_host = VFSAllocInode("hostname", VFS_PROC, sys_dir);
+        if (inum_host >= 0) {
+            CVFSInode *node = VFSGetInode(inum_host);
+            node->read_fn = ProcSysHostnameRead;
+            node->permissions = 0644;
+        }
+        I64 inum_ver = VFSAllocInode("version", VFS_PROC, sys_dir);
+        if (inum_ver >= 0) {
+            CVFSInode *node = VFSGetInode(inum_ver);
+            node->read_fn = ProcSysVersionRead;
+            node->permissions = 0644;
+        }
+    }
 }
 
 #endif /* PROC_HC */

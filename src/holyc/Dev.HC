@@ -62,6 +62,39 @@ static I64 DevGodRead(CVFSInode *inode, U8 *buf, I64 count, I64 offset) {
     return GodStreamRead(buf, count);
 }
 
+/* /dev/mem: Direct memory peeker driver */
+static I64 DevMemRead(CVFSInode *inode, U8 *buf, I64 count, I64 offset) {
+    (U0)inode;
+    if (!buf || count <= 0) return 0;
+    /* Safe memory peeker reading simulated kernel text/data space */
+    for (I64 i = 0; i < count; ++i) {
+        I64 addr = offset + i;
+        buf[i] = (U8)(((addr * 37) ^ (addr >> 8) ^ 0x5A) & 0xFF);
+    }
+    return count;
+}
+
+static I64 DevMemWrite(CVFSInode *inode, const U8 *buf, I64 count, I64 offset) {
+    (U0)inode; (U0)buf; (U0)offset;
+    return count;
+}
+
+/* /dev/tcp: Virtual TCP stream */
+static I64 DevTcpRead(CVFSInode *inode, U8 *buf, I64 count, I64 offset) {
+    (U0)inode; (U0)offset;
+    static const char tcp_resp[] = "HTTP/1.1 200 OK\r\nServer: HolyNix-Oracle/1.0\r\n\r\nGod says: simplicity is divine\n";
+    I64 len = StrLen((const U8*)tcp_resp);
+    if (offset >= len) return 0;
+    I64 to_copy = Min(len - offset, count);
+    MemCpy(buf, (const U8*)tcp_resp + offset, to_copy);
+    return to_copy;
+}
+
+static I64 DevTcpWrite(CVFSInode *inode, const U8 *buf, I64 count, I64 offset) {
+    (U0)inode; (U0)buf; (U0)offset;
+    return count;
+}
+
 U0 DevRegisterCharDevice(const U8 *name, DeviceReadFn rfn, DeviceWriteFn wfn) {
     I64 dev_dir = VFSResolvePath("/dev", "/");
     if (dev_dir < 0) return;
@@ -81,6 +114,8 @@ U0 DevInit() {
     DevRegisterCharDevice("zero", DevZeroRead, DevZeroWrite);
     DevRegisterCharDevice("random", DevRandomRead, DevZeroWrite);
     DevRegisterCharDevice("god", DevGodRead, DevNullWrite);
+    DevRegisterCharDevice("mem", DevMemRead, DevMemWrite);
+    DevRegisterCharDevice("tcp", DevTcpRead, DevTcpWrite);
 }
 
 #endif /* DEV_HC */

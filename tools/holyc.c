@@ -257,12 +257,12 @@ static void transpile_file_content(const char *src, const char *curr_dir, Buffer
 
         /* Statement and block boundary markers */
         if (src[i] == '{') {
-            if (seen_equal) {
+            if (seen_equal || initializer_depth > 0) {
                 initializer_depth++;
                 seen_equal = false;
             }
             buf_append_char(out, src[i++]);
-            at_statement_start = true;
+            at_statement_start = (initializer_depth == 0);
             continue;
         }
 
@@ -271,12 +271,21 @@ static void transpile_file_content(const char *src, const char *curr_dir, Buffer
                 initializer_depth--;
             }
             buf_append_char(out, src[i++]);
-            at_statement_start = true;
+            at_statement_start = (initializer_depth == 0);
+            continue;
+        }
+
+        if (src[i] == ',') {
+            buf_append_char(out, src[i++]);
+            if (initializer_depth > 0) {
+                at_statement_start = false;
+            }
             continue;
         }
 
         if (src[i] == ';') {
             seen_equal = false;
+            initializer_depth = 0;
             buf_append_char(out, src[i++]);
             at_statement_start = true;
             continue;

@@ -208,11 +208,141 @@ U0 TaskYield() {
     }
 }
 
+#define MAX_JOBS 16
+#define JOB_RUNNING 1
+#define JOB_STOPPED 2
+#define JOB_DONE    3
+
+class CJob {
+    I64 job_id;
+    I64 pid;
+    char comm[64];
+    I64 status;
+    Bool active;
+};
+
+static CJob g_jobs[MAX_JOBS];
+static I64 g_next_job_id = 1;
+
+I64 JobAdd(I64 pid, const char *comm) {
+    for (I64 i = 0; i < MAX_JOBS; ++i) {
+        if (!g_jobs[i].active) {
+            g_jobs[i].job_id = g_next_job_id++;
+            g_jobs[i].pid = pid;
+            strncpy(g_jobs[i].comm, comm ? comm : "command", sizeof(g_jobs[i].comm) - 1);
+            g_jobs[i].status = JOB_RUNNING;
+            g_jobs[i].active = TRUE;
+            return g_jobs[i].job_id;
+        }
+    }
+    return -1;
+}
+
+CJob *JobGet(I64 job_id) {
+    for (I64 i = 0; i < MAX_JOBS; ++i) {
+        if (g_jobs[i].active && g_jobs[i].job_id == job_id) {
+            return &g_jobs[i];
+        }
+    }
+    return NULL;
+}
+
+U0 JobRemove(I64 job_id) {
+    for (I64 i = 0; i < MAX_JOBS; ++i) {
+        if (g_jobs[i].active && g_jobs[i].job_id == job_id) {
+            g_jobs[i].active = FALSE;
+            return;
+        }
+    }
+}
+
+I64 JobFormatList(char *out_buf, I64 max_len) {
+    if (!out_buf || max_len <= 0) return 0;
+    I64 offset = 0;
+    out_buf[0] = '\0';
+
+    for (I64 i = 0; i < MAX_JOBS; ++i) {
+        if (g_jobs[i].active) {
+            /* Check if pid is still active */
+            CTask *t = TaskGetByPid(g_jobs[i].pid);
+            if (!t || t->state == TASK_ZOMBIE || t->state == TASK_UNUSED) {
+                g_jobs[i].status = JOB_DONE;
+            }
+            const char *st_str = (g_jobs[i].status == JOB_RUNNING) ? "Running" :
+                                 (g_jobs[i].status == JOB_STOPPED) ? "Stopped" : "Done";
+
+            offset += snprintf(out_buf + offset, max_len - offset,
+                               "[%lld]+  %-9s %s &\n",
+                               (long long)g_jobs[i].job_id,
+                               st_str,
+                               g_jobs[i].comm);
+            if (offset >= max_len - 128) break;
+        }
+    }
+    return offset;
+}
+
+/* -------------------------------------------------------------------------
+ * Cron Scheduled Task Subsystem
+ * ------------------------------------------------------------------------- */
+#define MAX_CRON_JOBS 8
+
+class CCronEntry {
+    I64 id;
+    I64 interval_sec;
+    I64 last_run_sec;
+    char cmd[128];
+    Bool active;
+};
+
+static CCronEntry g_cron_entries[MAX_CRON_JOBS];
+static I64 g_next_cron_id = 1;
+
+I64 CronAdd(I64 interval_sec, const char *cmd) {
+    if (interval_sec <= 0 || !cmd || !*cmd) return -1;
+    for (I64 i = 0; i < MAX_CRON_JOBS; ++i) {
+        if (!g_cron_entries[i].active) {
+            g_cron_entries[i].id = g_next_cron_id++;
+            g_cron_entries[i].interval_sec = interval_sec;
+            g_cron_entries[i].last_run_sec = KernelGetUptimeSec();
+            strncpy(g_cron_entries[i].cmd, cmd, sizeof(g_cron_entries[i].cmd) - 1);
+            g_cron_entries[i].active = TRUE;
+            return g_cron_entries[i].id;
+        }
+    }
+    return -1;
+}
+
+I64 CronList(char *out_buf, I64 max_len) {
+    if (!out_buf || max_len <= 0) return 0;
+    I64 offset = 0;
+    offset += snprintf(out_buf + offset, max_len - offset,
+        "\033[93mID  INTERVAL(s)  LAST_RUN(s)  COMMAND\033[0m\n"
+        "-----------------------------------------\n");
+
+    for (I64 i = 0; i < MAX_CRON_JOBS; ++i) {
+        if (g_cron_entries[i].active) {
+            offset += snprintf(out_buf + offset, max_len - offset,
+                               "%-3lld %-12lld %-12lld %s\n",
+                               (long long)g_cron_entries[i].id,
+                               (long long)g_cron_entries[i].interval_sec,
+                               (long long)g_cron_entries[i].last_run_sec,
+                               g_cron_entries[i].cmd);
+            if (offset >= max_len - 128) break;
+        }
+    }
+    return offset;
+}
+
 U0 TaskInit() {
     MemSet(g_tasks, 0, sizeof(g_tasks));
+    MemSet(g_jobs, 0, sizeof(g_jobs));
+    MemSet(g_cron_entries, 0, sizeof(g_cron_entries));
     g_kernel_start_time_ms = GetTimestampMs();
     g_system_ticks = 0;
     g_current_pid = 0;
+    g_next_job_id = 1;
+    g_next_cron_id = 1;
 
     /* PID 0: Kernel Swapper / Idle Task */
     CTask *idle = &g_tasks[0];
@@ -227,6 +357,9 @@ U0 TaskInit() {
     idle->fd_table[STDIN_FILENO]  = VFSOpen("/dev/tty", "/", O_RDONLY);
     idle->fd_table[STDOUT_FILENO] = VFSOpen("/dev/tty", "/", O_WRONLY);
     idle->fd_table[STDERR_FILENO] = VFSOpen("/dev/tty", "/", O_WRONLY);
+
+    /* Register default cron job: sync uptime every 60 seconds */
+    CronAdd(60, "echo '[cron] HolyNix kernel health check: OK' >> /tmp/cron.log");
 }
 
 #endif /* TASK_HC */
