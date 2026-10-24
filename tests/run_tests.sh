@@ -17,7 +17,7 @@ echo -e "\n\033[96m[2/7] Running In-Kernel POSIX Subsystem Tests (--test)...\033
 ./bin/holy_unix --test
 
 echo -e "\n\033[96m[3/7] Running Linux OS / Kernel Compliance TDD Test Suite...\033[0m"
-clang -Wall -O2 tests/test_linux_kernel.c -o tests/test_linux_kernel
+${CC:-clang} -Wall -O2 tests/test_linux_kernel.c -o tests/test_linux_kernel
 ./tests/test_linux_kernel
 
 echo -e "\n\033[96m[4/7] Testing Shell Commands & System Info...\033[0m"

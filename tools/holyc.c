@@ -549,14 +549,17 @@ int main(int argc, char **argv) {
         snprintf(target_out, sizeof(target_out), "a.out");
     }
 
+    const char *cc = getenv("CC");
+    if (!cc || cc[0] == '\0') cc = "clang";
+
     if (flag_c) {
         snprintf(cmd, sizeof(cmd),
-                 "clang -std=c11 -Wall -Wno-unused-function -Wno-pointer-sign -Wno-macro-redefined -Wno-typedef-redefinition -O2%s -c \"%s\" -o \"%s\"",
-                 inc_dirs, tmp_c_path, target_out);
+                 "%s -std=c11 -Wall -Wno-unused-function -Wno-pointer-sign -Wno-macro-redefined -Wno-typedef-redefinition -O2%s -c \"%s\" -o \"%s\"",
+                 cc, inc_dirs, tmp_c_path, target_out);
     } else {
         snprintf(cmd, sizeof(cmd),
-                 "clang -std=c11 -Wall -Wno-unused-function -Wno-pointer-sign -Wno-macro-redefined -Wno-typedef-redefinition -O2%s \"%s\" -o \"%s\"",
-                 inc_dirs, tmp_c_path, target_out);
+                 "%s -std=c11 -Wall -Wno-unused-function -Wno-pointer-sign -Wno-macro-redefined -Wno-typedef-redefinition -O2%s \"%s\" -o \"%s\"",
+                 cc, inc_dirs, tmp_c_path, target_out);
     }
 
     int compile_res = system(cmd);

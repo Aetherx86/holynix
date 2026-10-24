@@ -1,8 +1,8 @@
 # HolyC Unix Kernel & Terminal Operating System Makefile
 # Terry A. Davis Memorial Edition
 
-CC = clang
-CFLAGS = -Wall -Wextra -O2
+CC ?= clang
+CFLAGS ?= -Wall -Wextra -O2
 HOLYC = ./tools/holyc
 
 all: bin/holy_unix
