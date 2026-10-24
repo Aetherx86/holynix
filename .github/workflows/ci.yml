@@ -1,0 +1,68 @@
+name: HolyNix CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Build & Test (${{ matrix.os }} - ${{ matrix.compiler }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        compiler: [clang, gcc]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential clang gcc make
+
+      - name: Compile HolyC Compiler & Kernel
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          make clean
+          make all CC=$CC
+
+      - name: Run In-Kernel POSIX Subsystem Tests
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          ./bin/holy_unix --test
+
+      - name: Run Linux / POSIX Compliance TDD Test Suite
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          $CC -Wall -O2 tests/test_linux_kernel.c -o tests/test_linux_kernel
+          ./tests/test_linux_kernel
+
+      - name: Run Full End-to-End Integration Suite
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          ./tests/run_tests.sh
+
+      - name: Upload Binary Artifact (macOS / Clang only)
+        if: matrix.os == 'macos-latest' && matrix.compiler == 'clang'
+        uses: actions/upload-artifact@v4
+        with:
+          name: holynix-darwin-arm64
+          path: bin/holy_unix
+          if-no-files-found: error
+
+      - name: Upload Binary Artifact (Linux / Clang only)
+        if: matrix.os == 'ubuntu-latest' && matrix.compiler == 'clang'
+        uses: actions/upload-artifact@v4
+        with:
+          name: holynix-linux-x86_64
