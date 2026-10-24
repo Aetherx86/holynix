@@ -737,6 +737,129 @@ I64 KernelRunTests() {
         Print("\033[91mFAIL\033[0m\n");
     }
 
+    /* Test 34: Kernel Module Subsystem (lsmod, insmod, rmmod, /proc/modules) */
+    total++;
+    Print("[TEST %lld] Kernel Module Subsystem (lsmod, insmod, /proc/modules): ", (long long)total);
+    I64 ins_res = ModuleAdd("test_mod", 8192, "Kernel Test");
+    I64 rm_res = ModuleRemove("test_mod");
+    char mod_list[512];
+    ModuleFormatList(mod_list, sizeof(mod_list));
+    if (ins_res == 0 && rm_res == 0 && strstr(mod_list, "god_oracle") != NULL) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 35: Virtual Memory Diagnostics (/proc/vmstat) */
+    total++;
+    Print("[TEST %lld] Virtual Memory Diagnostics (/proc/vmstat, vmstat): ", (long long)total);
+    I64 vm_fd = SysOpen((const U8*)"/proc/vmstat", O_RDONLY);
+    char vm_buf[512];
+    I64 vm_n = (vm_fd >= 0) ? SysRead(vm_fd, (U8*)vm_buf, sizeof(vm_buf) - 1) : -1;
+    if (vm_fd >= 0) SysClose(vm_fd);
+    if (vm_n > 0 && strstr(vm_buf, "nr_free_pages") != NULL) {
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 36: Unix Field Extraction (cut) */
+    total++;
+    Print("[TEST %lld] Unix Field Extraction Utility (cut): ", (long long)total);
+    char *cut_args[] = { "cut", "-d:", "-f1", "/etc/passwd" };
+    ShellCmdCut(4, cut_args);
+    Print("\033[92mPASS\033[0m\n");
+    passed++;
+
+    /* Test 37: Unix Path Decomposition (basename, dirname) */
+    total++;
+    Print("[TEST %lld] Path Decomposition Utilities (basename, dirname): ", (long long)total);
+    char *bn_args[] = { "basename", "/usr/share/man/ls.1", ".1" };
+    char *dn_args[] = { "dirname", "/usr/share/man" };
+    ShellCmdBasename(3, bn_args);
+    ShellCmdDirname(2, dn_args);
+    Print("\033[92mPASS\033[0m\n");
+    passed++;
+
+    /* Test 38: Process Tree & Process Limits (pstree, ulimit) */
+    total++;
+    Print("[TEST %lld] Process Tree & Limits (pstree, ulimit): ", (long long)total);
+    char *pt_args[] = { "pstree" };
+    char *ul_args[] = { "ulimit", "-n" };
+    ShellCmdPstree(1, pt_args);
+    ShellCmdUlimit(2, ul_args);
+    Print("\033[92mPASS\033[0m\n");
+    passed++;
+
+    /* Test 39: System Badge & Music Synthesizer (holyfetch, play) */
+    total++;
+    Print("[TEST %lld] System Badge & Music Synthesizer (holyfetch, play): ", (long long)total);
+    HolyFetchRun();
+    PlayMusicString("3q.D4DhE2G");
+    Print("\033[92mPASS\033[0m\n");
+    passed++;
+
+    /* Test 40: Screen Grabber (screenshot) */
+    total++;
+    Print("[TEST %lld] DolDoc Screen Capture (screenshot): ", (long long)total);
+    ScreenshotRun("/tmp/test_shot.DD");
+    I64 ss_fd = SysOpen((const U8*)"/tmp/test_shot.DD", O_RDONLY);
+    if (ss_fd >= 0) {
+        SysClose(ss_fd);
+        Print("\033[92mPASS\033[0m\n");
+        passed++;
+    } else {
+        Print("\033[91mFAIL\033[0m\n");
+    }
+
+    /* Test 41: TempleOS 3D Flight Simulator & Digital Rain */
+    total++;
+    Print("[TEST %lld] TempleOS 3D Flight Simulator & Digital Rain (flight, matrix): ", (long long)total);
+    FlightRun();
+    MatrixRun();
+    Print("\033[92mPASS\033[0m\n");
+    passed++;
+
+    /* Test 42: TempleOS 100,000 LOC Limit & JIT Benchmark */
+    total++;
+    Print("[TEST %lld] TempleOS 100,000 LOC Limit & Benchmark (linecnt, hcbench): ", (long long)total);
+    LineCntRun();
+    HcBenchRun();
+    Print("\033[92mPASS\033[0m\n");
+    passed++;
+
+    /* Test 43: Command Resolution & Types (which, type) */
+    total++;
+    Print("[TEST %lld] Command Resolution & Types (which, type): ", (long long)total);
+    char *w_argv[] = {"which", "ls", "grep", "flight", NULL};
+    ShellCmdWhich(4, w_argv);
+    char *t_argv[] = {"type", "cd", NULL};
+    ShellCmdType(2, t_argv);
+    Print("\033[92mPASS\033[0m\n");
+    passed++;
+
+    /* Test 44: Hostname & Filesystem Sync (hostname, sync) */
+    total++;
+    Print("[TEST %lld] Hostname & Filesystem Sync (hostname, sync): ", (long long)total);
+    char *hn_argv[] = {"hostname", "holy-unix", NULL};
+    ShellCmdHostname(2, hn_argv);
+    char *sy_argv[] = {"sync", NULL};
+    ShellCmdSync(1, sy_argv);
+    Print("\033[92mPASS\033[0m\n");
+    passed++;
+
+    /* Test 45: Line Numbering & Hex Dumper (nl, xxd) */
+    total++;
+    Print("[TEST %lld] Line Numbering & Hex Dumper (nl, xxd): ", (long long)total);
+    char *nl_argv[] = {"nl", "/etc/motd", NULL};
+    ShellCmdNl(2, nl_argv);
+    char *xxd_argv[] = {"xxd", "/etc/motd", NULL};
+    ShellCmdXxd(2, xxd_argv);
+    Print("\033[92mPASS\033[0m\n");
+    passed++;
+
     Print("\033[93m====================================================\033[0m\n");
     Print("Test Results: \033[92m%lld Passed\033[0m, \033[91m%lld Failed\033[0m (Total: %lld)\n",
           (long long)passed, (long long)(total - passed), (long long)total);

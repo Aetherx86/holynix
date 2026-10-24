@@ -334,10 +334,130 @@ I64 CronList(char *out_buf, I64 max_len) {
     return offset;
 }
 
+#define MAX_MODULES 16
+
+class CModule {
+    char name[32];
+    I64 size;
+    I64 ref_count;
+    char author[32];
+    Bool loaded;
+};
+
+static CModule g_modules[MAX_MODULES];
+static I64 g_module_count = 0;
+
+U0 ModuleInit() {
+    MemSet(g_modules, 0, sizeof(g_modules));
+    g_module_count = 0;
+
+    strncpy(g_modules[0].name, "god_oracle", 31);
+    g_modules[0].size = 16384;
+    g_modules[0].ref_count = 1;
+    strncpy(g_modules[0].author, "Terry A. Davis", 31);
+    g_modules[0].loaded = TRUE;
+
+    strncpy(g_modules[1].name, "vga_16color", 31);
+    g_modules[1].size = 32768;
+    g_modules[1].ref_count = 2;
+    strncpy(g_modules[1].author, "TempleOS Kernel", 31);
+    g_modules[1].loaded = TRUE;
+
+    strncpy(g_modules[2].name, "redsea_fs", 31);
+    g_modules[2].size = 24576;
+    g_modules[2].ref_count = 1;
+    strncpy(g_modules[2].author, "Terry A. Davis", 31);
+    g_modules[2].loaded = TRUE;
+
+    strncpy(g_modules[3].name, "snd_pcspeaker", 31);
+    g_modules[3].size = 12288;
+    g_modules[3].ref_count = 0;
+    strncpy(g_modules[3].author, "HolyC Audio Core", 31);
+    g_modules[3].loaded = TRUE;
+
+    g_module_count = 4;
+}
+
+I64 ModuleAdd(const char *name, I64 size, const char *author) {
+    if (!name || !*name) return -1;
+    for (I64 i = 0; i < MAX_MODULES; ++i) {
+        if (g_modules[i].loaded && strcmp(g_modules[i].name, name) == 0) {
+            return -1;
+        }
+    }
+    for (I64 i = 0; i < MAX_MODULES; ++i) {
+        if (!g_modules[i].loaded) {
+            strncpy(g_modules[i].name, name, 31);
+            g_modules[i].size = (size > 0) ? size : 16384;
+            g_modules[i].ref_count = 0;
+            strncpy(g_modules[i].author, author ? author : "Terry A. Davis", 31);
+            g_modules[i].loaded = TRUE;
+            g_module_count++;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+I64 ModuleRemove(const char *name) {
+    if (!name || !*name) return -1;
+    for (I64 i = 0; i < MAX_MODULES; ++i) {
+        if (g_modules[i].loaded && strcmp(g_modules[i].name, name) == 0) {
+            if (g_modules[i].ref_count > 0) return -2;
+            g_modules[i].loaded = FALSE;
+            g_module_count--;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+I64 ModuleFormatList(char *out_buf, I64 max_len) {
+    if (!out_buf || max_len <= 0) return 0;
+    I64 offset = 0;
+    offset += snprintf(out_buf + offset, max_len - offset,
+        "Module                  Size  Used by\n");
+    for (I64 i = 0; i < MAX_MODULES; ++i) {
+        if (g_modules[i].loaded) {
+            offset += snprintf(out_buf + offset, max_len - offset,
+                "%-20s %6lld  %lld\n",
+                g_modules[i].name, (long long)g_modules[i].size, (long long)g_modules[i].ref_count);
+            if (offset >= max_len - 128) break;
+        }
+    }
+    return offset;
+}
+
+I64 ModuleFormatProc(char *out_buf, I64 max_len) {
+    if (!out_buf || max_len <= 0) return 0;
+    I64 offset = 0;
+    for (I64 i = 0; i < MAX_MODULES; ++i) {
+        if (g_modules[i].loaded) {
+            offset += snprintf(out_buf + offset, max_len - offset,
+                "%s %lld %lld - Live 0x0000000000000000\n",
+                g_modules[i].name, (long long)g_modules[i].size, (long long)g_modules[i].ref_count);
+            if (offset >= max_len - 128) break;
+        }
+    }
+    return offset;
+}
+
+I64 PSTreeFormat(char *out_buf, I64 max_len) {
+    if (!out_buf || max_len <= 0) return 0;
+    I64 offset = 0;
+    offset += snprintf(out_buf + offset, max_len - offset,
+        "init(1)───holysh(2)──┬──top(3)\n"
+        "                     ├──cron(4)\n"
+        "                     └──pstree(%lld)\n",
+        (long long)g_current_pid);
+    return offset;
+}
+
 U0 TaskInit() {
     MemSet(g_tasks, 0, sizeof(g_tasks));
     MemSet(g_jobs, 0, sizeof(g_jobs));
     MemSet(g_cron_entries, 0, sizeof(g_cron_entries));
+    ModuleInit();
     g_kernel_start_time_ms = GetTimestampMs();
     g_system_ticks = 0;
     g_current_pid = 0;

@@ -168,6 +168,45 @@ static I64 ProcSysVersionRead(CVFSInode *inode, U8 *buf, I64 count, I64 offset) 
     return to_copy;
 }
 
+extern I64 ModuleFormatProc(char *out_buf, I64 max_len);
+
+static I64 ProcModulesRead(CVFSInode *inode, U8 *buf, I64 count, I64 offset) {
+    (U0)inode;
+    char tmp[1024];
+    I64 len = ModuleFormatProc(tmp, sizeof(tmp));
+    if (offset >= len) return 0;
+    I64 to_copy = Min(len - offset, count);
+    MemCpy(buf, (const U8*)tmp + offset, to_copy);
+    return to_copy;
+}
+
+static I64 ProcVmstatRead(CVFSInode *inode, U8 *buf, I64 count, I64 offset) {
+    (U0)inode;
+    static const char vm_str[] =
+        "nr_free_pages 12288\n"
+        "nr_alloc_batch 16\n"
+        "nr_inactive_anon 2048\n"
+        "nr_active_anon 4096\n"
+        "nr_inactive_file 1024\n"
+        "nr_active_file 2048\n"
+        "nr_unevictable 0\n"
+        "nr_mlock 0\n"
+        "nr_anon_pages 4096\n"
+        "nr_mapped 1024\n"
+        "nr_file_pages 3072\n"
+        "nr_dirty 0\n"
+        "nr_writeback 0\n"
+        "pgpgin 65536\n"
+        "pgpgout 49152\n"
+        "pswpin 0\n"
+        "pswpout 0\n";
+    I64 len = StrLen((const U8*)vm_str);
+    if (offset >= len) return 0;
+    I64 to_copy = Min(len - offset, count);
+    MemCpy(buf, (const U8*)vm_str + offset, to_copy);
+    return to_copy;
+}
+
 U0 ProcRegisterNode(const U8 *name, DeviceReadFn rfn) {
     I64 proc_dir = VFSResolvePath("/proc", "/");
     if (proc_dir < 0) return;
@@ -187,6 +226,8 @@ U0 ProcInit() {
     ProcRegisterNode("meminfo", ProcMemInfoRead);
     ProcRegisterNode("cpuinfo", ProcCpuInfoRead);
     ProcRegisterNode("tasks", ProcTasksRead);
+    ProcRegisterNode("modules", ProcModulesRead);
+    ProcRegisterNode("vmstat", ProcVmstatRead);
 
     /* Create /proc/net and /proc/sys/kernel directories */
     VFSMkdir("net", "/proc");

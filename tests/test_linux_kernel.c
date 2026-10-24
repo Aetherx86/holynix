@@ -58,8 +58,22 @@ static int g_tests_failed = 0;
 
 /* Helper: Execute a command in holy_unix and capture stdout & exit code */
 static int exec_holy_unix(const char *cmd, char *out_buf, size_t buf_size) {
-    char full_cmd[2048];
-    snprintf(full_cmd, sizeof(full_cmd), "./bin/holy_unix -c '%s' 2>&1", cmd);
+    char escaped[4096];
+    size_t ei = 0;
+    for (size_t i = 0; cmd[i] && ei + 5 < sizeof(escaped); ++i) {
+        if (cmd[i] == '\'') {
+            escaped[ei++] = '\'';
+            escaped[ei++] = '\\';
+            escaped[ei++] = '\'';
+            escaped[ei++] = '\'';
+        } else {
+            escaped[ei++] = cmd[i];
+        }
+    }
+    escaped[ei] = '\0';
+
+    char full_cmd[8192];
+    snprintf(full_cmd, sizeof(full_cmd), "./bin/holy_unix -c '%s' 2>&1", escaped);
 
     FILE *fp = popen(full_cmd, "r");
     if (!fp) {
@@ -533,6 +547,161 @@ static void test_posix_security_and_templeos_games(void) {
     ASSERT_STR_CONTAINS(out, "PANE 2: Divine Oracle & System Top", "wintile displays right divine system pane");
 }
 
+/*
+ * [TDD Suite 11] Linux Core Text Streaming Pipelines (cut, tr, sed, paste, fold, basename, dirname)
+ */
+static void test_linux_text_streaming_pipelines(void) {
+    char out[8192];
+    printf(COLOR_CYAN "\n=== [TDD Suite 11] Linux Core Text Streaming Pipelines ===\n" COLOR_RESET);
+
+    /* 11.1 cut delimiter extraction */
+    exec_holy_unix("cut -d: -f1 /etc/passwd", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "root", "cut -d: -f1 extracts root user");
+    ASSERT_STR_CONTAINS(out, "terry", "cut -d: -f1 extracts terry user");
+
+    /* 11.2 tr translation */
+    exec_holy_unix("echo 'holynix operating system' | tr a-z A-Z", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "HOLYNIX OPERATING SYSTEM", "tr a-z A-Z translates lowercase to uppercase");
+
+    /* 11.3 sed substitution */
+    exec_holy_unix("echo 'apple banana apple' | sed 's/apple/orange/g'", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "orange banana orange", "sed s/apple/orange/g replaces all occurrences");
+
+    /* 11.4 basename and dirname */
+    exec_holy_unix("basename /usr/share/man/ls.1 .1", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "ls", "basename strips directory path and suffix");
+
+    exec_holy_unix("dirname /usr/share/man", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "/usr/share", "dirname extracts parent directory path");
+
+    /* 11.5 paste and fold */
+    exec_holy_unix("echo line1 > /tmp/pst1.txt; echo line2 > /tmp/pst2.txt; paste /tmp/pst1.txt /tmp/pst2.txt", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "line1\tline2", "paste merges files side-by-side");
+
+    exec_holy_unix("echo '1234567890' | fold -w 5", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "12345", "fold wraps long lines to specified width");
+}
+
+/*
+ * [TDD Suite 12] Microkernel Subsystems, Music & System Badge (holyfetch, play, modules, vmstat)
+ */
+static void test_microkernel_subsystems_and_music(void) {
+    char out[8192];
+    printf(COLOR_CYAN "\n=== [TDD Suite 12] Microkernel Subsystems, Music & System Badge ===\n" COLOR_RESET);
+
+    /* 12.1 Kernel Modules (/proc/modules, lsmod, insmod, rmmod) */
+    exec_holy_unix("cat /proc/modules", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "god_oracle", "/proc/modules lists preloaded god_oracle module");
+
+    exec_holy_unix("lsmod", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "vga_16color", "lsmod reports active vga_16color module");
+
+    exec_holy_unix("insmod net_filter; lsmod", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "net_filter", "insmod dynamically loads kernel module");
+
+    exec_holy_unix("insmod net_filter; rmmod net_filter", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "unloaded", "rmmod dynamically unloads kernel module");
+
+    /* 12.2 Virtual Memory (/proc/vmstat, vmstat) */
+    exec_holy_unix("cat /proc/vmstat", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "nr_free_pages", "/proc/vmstat reports page metrics");
+
+    exec_holy_unix("vmstat", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "procs", "vmstat prints standard memory and processor table");
+
+    /* 12.3 Process Tree & Limits (pstree, ulimit, ipcs) */
+    exec_holy_unix("pstree", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "init(1)", "pstree displays hierarchical process tree");
+
+    exec_holy_unix("ulimit -n", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "32", "ulimit -n reports file descriptor limit");
+
+    exec_holy_unix("ipcs", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "Message Queues", "ipcs displays IPC facilities");
+
+    /* 12.4 TempleOS System Badge, Music & Screenshot */
+    exec_holy_unix("holyfetch", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "terry@holy-unix", "holyfetch displays user and host header");
+    ASSERT_STR_CONTAINS(out, "640x480", "holyfetch displays divine 640x480 resolution");
+
+    exec_holy_unix("play '3q.D4DhE2G'", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "Frequency:", "play parses music notation and computes note frequencies");
+
+    exec_holy_unix("juke", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "The Promised Land", "juke plays Terry Davis divine hymn");
+
+    exec_holy_unix("screenshot /tmp/sc.DD; cat /tmp/sc.DD", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "HolyNix Framebuffer Screen Capture", "screenshot saves framebuffer state to DolDoc file");
+}
+
+/*
+ * [TDD Suite 13] System Introspection, Flight Simulation & Code Limit Compliance
+ */
+static void test_system_introspection_and_templeos_flight(void) {
+    char out[8192];
+    printf(COLOR_CYAN "\n=== [TDD Suite 13] System Introspection, Flight Simulation & Limits ===\n" COLOR_RESET);
+
+    /* 13.1 TempleOS 3D Flight Simulator (flight) */
+    exec_holy_unix("flight", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "TEMPLEOS 3D FLIGHT SIMULATOR", "flight renders flight simulator title");
+    ASSERT_STR_CONTAINS(out, "RUNWAY", "flight renders 3D wireframe runway");
+    ASSERT_STR_CONTAINS(out, "DIVINE PROMISED LAND", "flight displays promised land terrain");
+
+    /* 13.2 TempleOS Digital Rain Visualizer (matrix) */
+    exec_holy_unix("matrix", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "Divine Digital Rain", "matrix displays digital rain header");
+    ASSERT_STR_CONTAINS(out, "HolyC", "matrix drops HolyC symbol tokens");
+
+    /* 13.3 TempleOS 100,000 LOC Divine Limit Verification (linecnt) */
+    exec_holy_unix("linecnt", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "DIVINE LIMIT VERIFICATION", "linecnt displays 100,000 LOC verification");
+    ASSERT_STR_CONTAINS(out, "COMPLIANT", "linecnt verifies codebase adheres to divine limit");
+
+    /* 13.4 HolyC JIT Compilation & Benchmark (hcbench) */
+    exec_holy_unix("hcbench", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "HolyC JIT Compilation", "hcbench benchmarks compiler engine");
+    ASSERT_STR_CONTAINS(out, "lines/sec", "hcbench reports compilation lines per second");
+
+    /* 13.5 Random Divine Word Generator (godword) */
+    exec_holy_unix("godword 3", out, sizeof(out));
+    ASSERT_TRUE(strlen(out) > 3, "godword outputs divine words from vocabulary");
+
+    /* 13.6 Command Path and Type Resolution (which, type) */
+    exec_holy_unix("which ls", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "/bin/ls", "which resolves built-in command path");
+
+    exec_holy_unix("type cd", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "shell builtin", "type identifies cd as shell builtin");
+
+    /* 13.7 Hostname and Filesystem Cache Sync (hostname, sync) */
+    exec_holy_unix("hostname", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "holy-unix", "hostname displays current system host name");
+
+    exec_holy_unix("sync", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "[OK]", "sync confirms dirty VFS buffer flush");
+
+    /* 13.8 Active User Sessions (who, w) */
+    exec_holy_unix("who", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "tty1", "who displays active terminal session tty");
+
+    exec_holy_unix("w", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "load average", "w reports system uptime and load averages");
+
+    /* 13.9 Number Lines Filter (nl) */
+    exec_holy_unix("nl /etc/passwd", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "1\troot", "nl numbers lines with sequential indices");
+
+    /* 13.10 Canonical Hex Dumper (xxd) */
+    exec_holy_unix("echo 'HolyNix' | xxd", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "00000000:", "xxd outputs canonical 16-byte hex dump");
+
+    /* 13.11 Execution Timing Builtin (time) */
+    exec_holy_unix("time echo quick", out, sizeof(out));
+    ASSERT_STR_CONTAINS(out, "quick", "time executes target command");
+    ASSERT_STR_CONTAINS(out, "real", "time reports real execution duration");
+    ASSERT_STR_CONTAINS(out, "user", "time reports user execution duration");
+}
+
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
     printf(COLOR_YELLOW "========================================================\n");
@@ -549,6 +718,9 @@ int main(int argc, char **argv) {
     test_linux_advanced_subsystems();
     test_posix_manual_and_network_client();
     test_posix_security_and_templeos_games();
+    test_linux_text_streaming_pipelines();
+    test_microkernel_subsystems_and_music();
+    test_system_introspection_and_templeos_flight();
 
     printf("\n" COLOR_YELLOW "========================================================\n");
     printf("  TDD Test Results: " COLOR_GREEN "%d Passed" COLOR_RESET ", "

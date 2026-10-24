@@ -798,6 +798,692 @@ U0 ShellCmdWinTile(I64 argc, char **argv) {
 }
 
 /*
+ * Built-in Command: cut
+ */
+U0 ShellCmdCut(I64 argc, char **argv) {
+    char delim = '\t';
+    I64 field = 1;
+    const char *file = NULL;
+
+    for (I64 i = 1; i < argc; ++i) {
+        if (strncmp(argv[i], "-d", 2) == 0) {
+            if (strlen(argv[i]) > 2) delim = argv[i][2];
+            else if (i + 1 < argc) delim = argv[++i][0];
+        } else if (strncmp(argv[i], "-f", 2) == 0) {
+            if (strlen(argv[i]) > 2) field = atoll(argv[i] + 2);
+            else if (i + 1 < argc) field = atoll(argv[++i]);
+        } else if (argv[i][0] != '-') {
+            file = argv[i];
+        }
+    }
+
+    I64 fd = STDIN_FILENO;
+    if (file) {
+        fd = SysOpen((const U8*)file, O_RDONLY);
+        if (fd < 0) {
+            Print("cut: %s: No such file or directory\n", file);
+            g_last_exit_code = 1;
+            return;
+        }
+    }
+
+    char buf[4096];
+    I64 n = SysRead(fd, (U8*)buf, sizeof(buf) - 1);
+    if (file) SysClose(fd);
+    if (n <= 0) return;
+    buf[n] = '\0';
+
+    char *saveptr = NULL;
+    char *line = strtok_r(buf, "\r\n", &saveptr);
+    while (line) {
+        char *cur = line;
+        I64 f = 1;
+        char *val = cur;
+        while (*cur) {
+            if (*cur == delim) {
+                if (f == field) {
+                    *cur = '\0';
+                    break;
+                }
+                f++;
+                val = cur + 1;
+            }
+            cur++;
+        }
+        if (f == field) {
+            ShellPrintOut("%s\n", val);
+        } else {
+            ShellPrintOut("%s\n", line);
+        }
+        line = strtok_r(NULL, "\r\n", &saveptr);
+    }
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Command: tr
+ */
+U0 ShellCmdTr(I64 argc, char **argv) {
+    if (argc < 2) {
+        Print("usage: tr [-d] string1 [string2]\n");
+        g_last_exit_code = 1;
+        return;
+    }
+    Bool delete_mode = FALSE;
+    const char *s1 = NULL;
+    const char *s2 = NULL;
+
+    for (I64 i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "-d") == 0) {
+            delete_mode = TRUE;
+        } else if (!s1) {
+            s1 = argv[i];
+        } else if (!s2) {
+            s2 = argv[i];
+        }
+    }
+
+    char buf[4096];
+    I64 n = SysRead(STDIN_FILENO, (U8*)buf, sizeof(buf) - 1);
+    if (n <= 0) return;
+    buf[n] = '\0';
+
+    char out_buf[4096];
+    I64 out_len = 0;
+
+    for (I64 i = 0; i < n && out_len < (I64)sizeof(out_buf) - 1; ++i) {
+        char c = buf[i];
+        if (delete_mode) {
+            if (!s1 || strchr(s1, c) == NULL) {
+                out_buf[out_len++] = c;
+            }
+        } else if (s1 && s2) {
+            if (strcmp(s1, "a-z") == 0 && strcmp(s2, "A-Z") == 0) {
+                out_buf[out_len++] = (char)toupper((unsigned char)c);
+            } else if (strcmp(s1, "A-Z") == 0 && strcmp(s2, "a-z") == 0) {
+                out_buf[out_len++] = (char)tolower((unsigned char)c);
+            } else {
+                char *pos = strchr(s1, c);
+                if (pos) {
+                    I64 idx = pos - s1;
+                    if (idx < (I64)strlen(s2)) out_buf[out_len++] = s2[idx];
+                    else out_buf[out_len++] = s2[strlen(s2) - 1];
+                } else {
+                    out_buf[out_len++] = c;
+                }
+            }
+        } else {
+            out_buf[out_len++] = c;
+        }
+    }
+    if (out_len > 0) {
+        SysWrite(STDOUT_FILENO, (const U8*)out_buf, out_len);
+    }
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Command: sed
+ */
+U0 ShellCmdSed(I64 argc, char **argv) {
+    if (argc < 2) {
+        Print("usage: sed 's/find/replace/g' [file]\n");
+        g_last_exit_code = 1;
+        return;
+    }
+    const char *expr = argv[1];
+    char clean_expr[256];
+    strncpy(clean_expr, expr, sizeof(clean_expr) - 1);
+    clean_expr[sizeof(clean_expr) - 1] = '\0';
+    if ((clean_expr[0] == '\'' || clean_expr[0] == '"') && strlen(clean_expr) >= 2) {
+        char q = clean_expr[0];
+        size_t elen = strlen(clean_expr);
+        if (clean_expr[elen - 1] == q) clean_expr[elen - 1] = '\0';
+        memmove(clean_expr, clean_expr + 1, elen);
+    }
+    expr = clean_expr;
+
+    const char *file = (argc > 2) ? argv[2] : NULL;
+
+    char find_str[128] = "";
+    char repl_str[128] = "";
+    Bool global_flag = FALSE;
+
+    if (expr[0] == 's' && expr[1] == '/') {
+        char *slash1 = (char*)expr + 1;
+        char *slash2 = strchr(slash1 + 1, '/');
+        if (slash2) {
+            size_t flen = slash2 - (slash1 + 1);
+            if (flen > 127) flen = 127;
+            strncpy(find_str, slash1 + 1, flen);
+            find_str[flen] = '\0';
+
+            char *slash3 = strchr(slash2 + 1, '/');
+            if (slash3) {
+                size_t rlen = slash3 - (slash2 + 1);
+                if (rlen > 127) rlen = 127;
+                strncpy(repl_str, slash2 + 1, rlen);
+                repl_str[rlen] = '\0';
+                if (strchr(slash3 + 1, 'g')) global_flag = TRUE;
+            } else {
+                strncpy(repl_str, slash2 + 1, sizeof(repl_str) - 1);
+            }
+        }
+    }
+
+    I64 fd = STDIN_FILENO;
+    if (file) {
+        fd = SysOpen((const U8*)file, O_RDONLY);
+        if (fd < 0) {
+            ShellPrintOut("sed: %s: No such file or directory\n", file);
+            g_last_exit_code = 1;
+            return;
+        }
+    }
+
+    char buf[4096];
+    I64 n = SysRead(fd, (U8*)buf, sizeof(buf) - 1);
+    if (file) SysClose(fd);
+    if (n <= 0) return;
+    buf[n] = '\0';
+
+    if (find_str[0] == '\0') {
+        ShellPrintOut("%s", buf);
+        return;
+    }
+
+    char *p = buf;
+    size_t flen = strlen(find_str);
+    while (*p) {
+        char *found = strstr(p, find_str);
+        if (found) {
+            while (p < found) {
+                char ch = *p++;
+                SysWrite(STDOUT_FILENO, (const U8*)&ch, 1);
+            }
+            ShellPrintOut("%s", repl_str);
+            p += flen;
+            if (!global_flag) {
+                ShellPrintOut("%s", p);
+                break;
+            }
+        } else {
+            ShellPrintOut("%s", p);
+            break;
+        }
+    }
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Command: paste
+ */
+U0 ShellCmdPaste(I64 argc, char **argv) {
+    if (argc < 3) {
+        Print("usage: paste file1 file2\n");
+        g_last_exit_code = 1;
+        return;
+    }
+    I64 fd1 = SysOpen((const U8*)argv[1], O_RDONLY);
+    I64 fd2 = SysOpen((const U8*)argv[2], O_RDONLY);
+    if (fd1 < 0 || fd2 < 0) {
+        if (fd1 >= 0) SysClose(fd1);
+        if (fd2 >= 0) SysClose(fd2);
+        Print("paste: file error\n");
+        g_last_exit_code = 1;
+        return;
+    }
+    char b1[2048], b2[2048];
+    I64 n1 = SysRead(fd1, (U8*)b1, sizeof(b1) - 1);
+    I64 n2 = SysRead(fd2, (U8*)b2, sizeof(b2) - 1);
+    SysClose(fd1); SysClose(fd2);
+    if (n1 > 0) b1[n1] = '\0'; else b1[0] = '\0';
+    if (n2 > 0) b2[n2] = '\0'; else b2[0] = '\0';
+
+    char *s1 = NULL, *s2 = NULL;
+    char *l1 = strtok_r(b1, "\r\n", &s1);
+    char *l2 = strtok_r(b2, "\r\n", &s2);
+    while (l1 || l2) {
+        ShellPrintOut("%s\t%s\n", l1 ? l1 : "", l2 ? l2 : "");
+        l1 = strtok_r(NULL, "\r\n", &s1);
+        l2 = strtok_r(NULL, "\r\n", &s2);
+    }
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Command: fold
+ */
+U0 ShellCmdFold(I64 argc, char **argv) {
+    I64 width = 80;
+    const char *file = NULL;
+    for (I64 i = 1; i < argc; ++i) {
+        if (strncmp(argv[i], "-w", 2) == 0) {
+            if (strlen(argv[i]) > 2) width = atoll(argv[i] + 2);
+            else if (i + 1 < argc) width = atoll(argv[++i]);
+        } else if (argv[i][0] != '-') file = argv[i];
+    }
+    if (width <= 0) width = 80;
+    I64 fd = file ? SysOpen((const U8*)file, O_RDONLY) : STDIN_FILENO;
+    if (fd < 0) { ShellPrintOut("fold: cannot open file\n"); g_last_exit_code = 1; return; }
+    char buf[4096];
+    I64 n = SysRead(fd, (U8*)buf, sizeof(buf) - 1);
+    if (file) SysClose(fd);
+    if (n <= 0) return;
+    buf[n] = '\0';
+    I64 col = 0;
+    for (I64 i = 0; i < n; ++i) {
+        if (buf[i] == '\n') {
+            SysWrite(STDOUT_FILENO, (const U8*)"\n", 1);
+            col = 0;
+        } else {
+            SysWrite(STDOUT_FILENO, (const U8*)&buf[i], 1);
+            col++;
+            if (col >= width) {
+                SysWrite(STDOUT_FILENO, (const U8*)"\n", 1);
+                col = 0;
+            }
+        }
+    }
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Commands: basename, dirname
+ */
+U0 ShellCmdBasename(I64 argc, char **argv) {
+    if (argc < 2) { Print("usage: basename string [suffix]\n"); g_last_exit_code = 1; return; }
+    const char *p = argv[1];
+    const char *slash = strrchr(p, '/');
+    const char *base = slash ? slash + 1 : p;
+    char out[256];
+    strncpy(out, base, sizeof(out) - 1);
+    out[sizeof(out) - 1] = '\0';
+    if (argc > 2) {
+        const char *suf = argv[2];
+        size_t blen = strlen(out);
+        size_t slen = strlen(suf);
+        if (blen >= slen && strcmp(out + blen - slen, suf) == 0) {
+            out[blen - slen] = '\0';
+        }
+    }
+    ShellPrintOut("%s\n", out);
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdDirname(I64 argc, char **argv) {
+    if (argc < 2) { Print("usage: dirname string\n"); g_last_exit_code = 1; return; }
+    const char *p = argv[1];
+    const char *slash = strrchr(p, '/');
+    if (!slash) { ShellPrintOut(".\n"); }
+    else if (slash == p) { ShellPrintOut("/\n"); }
+    else {
+        char out[256];
+        size_t dlen = slash - p;
+        if (dlen > 255) dlen = 255;
+        strncpy(out, p, dlen);
+        out[dlen] = '\0';
+        ShellPrintOut("%s\n", out);
+    }
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Commands: lsmod, insmod, rmmod
+ */
+extern I64 ModuleFormatList(char *out_buf, I64 max_len);
+extern I64 ModuleAdd(const char *name, I64 size, const char *author);
+extern I64 ModuleRemove(const char *name);
+
+U0 ShellCmdLsmod(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    char buf[2048];
+    ModuleFormatList(buf, sizeof(buf));
+    ShellPrintOut("%s", buf);
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdInsmod(I64 argc, char **argv) {
+    if (argc < 2) { Print("usage: insmod <module_name>\n"); g_last_exit_code = 1; return; }
+    I64 res = ModuleAdd(argv[1], 16384, "User Module");
+    if (res == 0) {
+        ShellPrintOut("insmod: module '%s' loaded successfully\n", argv[1]);
+        g_last_exit_code = 0;
+    } else {
+        Print("insmod: failed to load module '%s'\n", argv[1]);
+        g_last_exit_code = 1;
+    }
+}
+
+U0 ShellCmdRmmod(I64 argc, char **argv) {
+    if (argc < 2) { Print("usage: rmmod <module_name>\n"); g_last_exit_code = 1; return; }
+    I64 res = ModuleRemove(argv[1]);
+    if (res == 0) {
+        ShellPrintOut("rmmod: module '%s' unloaded\n", argv[1]);
+        g_last_exit_code = 0;
+    } else {
+        Print("rmmod: cannot unload '%s' (not found or in use)\n", argv[1]);
+        g_last_exit_code = 1;
+    }
+}
+
+/*
+ * Built-in Commands: vmstat, ulimit, pstree, ipcs
+ */
+U0 ShellCmdVmstat(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    ShellPrintOut("procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----\n"
+                  " r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st\n"
+                  " 1  0      0  49152   4096  12288    0    0     0     0   10   20  2  3 95  0  0\n");
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdUlimit(I64 argc, char **argv) {
+    if (argc > 1 && strcmp(argv[1], "-n") == 0) {
+        ShellPrintOut("32\n");
+    } else if (argc > 1 && strcmp(argv[1], "-s") == 0) {
+        ShellPrintOut("8192\n");
+    } else if (argc > 1 && strcmp(argv[1], "-u") == 0) {
+        ShellPrintOut("64\n");
+    } else {
+        ShellPrintOut("core file size          (blocks, -c) 0\n"
+                      "data seg size           (kbytes, -d) unlimited\n"
+                      "file size               (blocks, -f) unlimited\n"
+                      "open files                      (-n) 32\n"
+                      "pipe size            (512 bytes, -p) 8\n"
+                      "stack size              (kbytes, -s) 8192\n"
+                      "max user processes              (-u) 64\n"
+                      "virtual memory          (kbytes, -v) unlimited\n");
+    }
+    g_last_exit_code = 0;
+}
+
+extern I64 PSTreeFormat(char *out_buf, I64 max_len);
+U0 ShellCmdPstree(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    char buf[512];
+    PSTreeFormat(buf, sizeof(buf));
+    ShellPrintOut("%s", buf);
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdIpcs(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    ShellPrintOut("\n------ Message Queues --------\n"
+                  "key        msqid      owner      perms      used-bytes   messages\n"
+                  "\n------ Shared Memory Segments --------\n"
+                  "key        shmid      owner      perms      bytes      nattch     status\n"
+                  "0x00007777 0          terry      600        65536      1          dest\n"
+                  "\n------ Semaphore Arrays --------\n"
+                  "key        semid      owner      perms      nsems\n"
+                  "0x00007778 0          terry      666        4\n\n");
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Commands: holyfetch, play, juke, screenshot
+ */
+U0 ShellCmdHolyFetch(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    HolyFetchRun();
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdPlay(I64 argc, char **argv) {
+    const char *mstr = (argc > 1) ? argv[1] : "3q.D4DhE2G";
+    PlayMusicString(mstr);
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdJuke(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    JukeRun();
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdScreenshot(I64 argc, char **argv) {
+    const char *dst = (argc > 1) ? argv[1] : "/home/terry/screenshot.DD";
+    ScreenshotRun(dst);
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Commands: flight, matrix, linecnt, hcbench, godword
+ */
+U0 ShellCmdFlight(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    FlightRun();
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdMatrix(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    MatrixRun();
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdLineCnt(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    LineCntRun();
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdHcBench(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    HcBenchRun();
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdGodWord(I64 argc, char **argv) {
+    I64 count = 1;
+    if (argc > 1) {
+        count = atoll(argv[1]);
+        if (count <= 0) count = 1;
+        if (count > 20) count = 20;
+    }
+    for (I64 i = 0; i < count; ++i) {
+        ShellPrintOut("%s%s", GodGetWord(), (i + 1 < count) ? " " : "\n");
+    }
+    g_last_exit_code = 0;
+}
+
+/*
+ * Built-in Commands: which, type, hostname, sync, who, w, nl, xxd, time
+ */
+U0 ShellCmdWhich(I64 argc, char **argv) {
+    if (argc < 2) {
+        Print("usage: which command ...\n");
+        g_last_exit_code = 1;
+        return;
+    }
+    for (I64 i = 1; i < argc; ++i) {
+        const char *name = argv[i];
+        const char *al = ShellGetAlias(name);
+        if (al && *al) {
+            ShellPrintOut("%s: aliased to %s\n", name, al);
+            continue;
+        }
+        static const char *known_builtins[] = {
+            "ls", "cd", "pwd", "mkdir", "touch", "rm", "cp", "mv", "cat", "echo",
+            "ps", "kill", "uname", "uptime", "whoami", "dmesg", "god", "grep",
+            "head", "tail", "wc", "stat", "chmod", "chown", "date", "find",
+            "sort", "uniq", "tee", "seq", "ln", "readlink", "df", "du", "diff",
+            "hexdump", "cal", "sleep", "exit", "export", "env", "printenv",
+            "source", ".", "alias", "unalias", "history", "jobs", "fg", "bg",
+            "sysctl", "tar", "ping", "netstat", "cron", "crontab", "doldoc",
+            "holyless", "bible", "godpassage", "goddoodle", "redsea", "peek",
+            "poke", "memdump", "disasm", "hpm", "man", "apropos", "whatis",
+            "curl", "fetch", "id", "groups", "su", "sudo", "passwd", "stty",
+            "test", "[", "castle", "afteregypt", "flappy", "wintile", "split",
+            "cut", "tr", "sed", "paste", "fold", "basename", "dirname",
+            "lsmod", "insmod", "rmmod", "vmstat", "pstree", "ulimit", "ipcs",
+            "holyfetch", "neofetch", "play", "music", "juke", "screenshot",
+            "fbgrab", "flight", "matrix", "linecnt", "hcbench", "hostname",
+            "clear", "sync", "who", "w", "nl", "xxd", "time", "godword", NULL
+        };
+        Bool is_builtin = FALSE;
+        for (I64 b = 0; known_builtins[b]; ++b) {
+            if (strcmp(name, known_builtins[b]) == 0) {
+                is_builtin = TRUE;
+                break;
+            }
+        }
+        if (is_builtin) {
+            ShellPrintOut("/bin/%s\n", name);
+            g_last_exit_code = 0;
+        } else {
+            ShellPrintOut("which: no %s in (/bin:/usr/bin:/sbin)\n", name);
+            g_last_exit_code = 1;
+        }
+    }
+}
+
+U0 ShellCmdType(I64 argc, char **argv) {
+    if (argc < 2) {
+        Print("usage: type name ...\n");
+        g_last_exit_code = 1;
+        return;
+    }
+    for (I64 i = 1; i < argc; ++i) {
+        const char *name = argv[i];
+        const char *al = ShellGetAlias(name);
+        if (al && *al) {
+            ShellPrintOut("%s is an alias for %s\n", name, al);
+            continue;
+        }
+        ShellPrintOut("%s is a shell builtin\n", name);
+    }
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdHostname(I64 argc, char **argv) {
+    if (argc > 1) {
+        CTask *t = TaskGetCurrent();
+        if (t && t->uid != 0) {
+            Print("hostname: you must be root to change the host name\n");
+            g_last_exit_code = 1;
+            return;
+        }
+        strncpy(g_sysctl_hostname, argv[1], sizeof(g_sysctl_hostname) - 1);
+        g_sysctl_hostname[sizeof(g_sysctl_hostname) - 1] = '\0';
+        ShellPrintOut("hostname updated to '%s'\n", argv[1]);
+    } else {
+        ShellPrintOut("%s\n", g_sysctl_hostname);
+    }
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdSync(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    ShellPrintOut("sync: flushing dirty VFS inode blocks to storage... [OK]\n");
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdWho(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    CTask *t = TaskGetCurrent();
+    const char *u = (t && t->uid == 0) ? "root" : (t && t->uid == 777 ? "god" : "terry");
+    ShellPrintOut("%-8s tty1         2026-10-24 15:00 (:0)\n", u);
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdW(I64 argc, char **argv) {
+    (U0)argc; (U0)argv;
+    CTask *t = TaskGetCurrent();
+    const char *u = (t && t->uid == 0) ? "root" : (t && t->uid == 777 ? "god" : "terry");
+    ShellPrintOut(" 15:00:00 up %lld seconds, 1 user, load average: 0.08, 0.02, 0.01\n", (long long)KernelGetUptimeSec());
+    ShellPrintOut("%-8s TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT\n", "USER");
+    ShellPrintOut("%-8s tty1     :0               15:00    0.00s  0.05s  0.01s holysh\n", u);
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdNl(I64 argc, char **argv) {
+    I64 fd = STDIN_FILENO;
+    const char *file = (argc > 1) ? argv[1] : NULL;
+    if (file) {
+        fd = SysOpen((const U8*)file, O_RDONLY);
+        if (fd < 0) {
+            ShellPrintOut("nl: %s: No such file or directory\n", file);
+            g_last_exit_code = 1;
+            return;
+        }
+    }
+    char buf[4096];
+    I64 n = SysRead(fd, (U8*)buf, sizeof(buf) - 1);
+    if (file) SysClose(fd);
+    if (n <= 0) return;
+    buf[n] = '\0';
+
+    I64 line_no = 1;
+    char *p = buf;
+    while (*p) {
+        char *eol = strchr(p, '\n');
+        if (eol) *eol = '\0';
+        ShellPrintOut("%6lld\t%s\n", (long long)line_no++, p);
+        if (!eol) break;
+        p = eol + 1;
+    }
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdXxd(I64 argc, char **argv) {
+    Bool plain = FALSE;
+    const char *file = NULL;
+    for (I64 i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "-p") == 0) plain = TRUE;
+        else if (argv[i][0] != '-') file = argv[i];
+    }
+    I64 fd = file ? SysOpen((const U8*)file, O_RDONLY) : STDIN_FILENO;
+    if (fd < 0) {
+        ShellPrintOut("xxd: %s: No such file or directory\n", file);
+        g_last_exit_code = 1;
+        return;
+    }
+    U8 buf[256];
+    I64 n = SysRead(fd, buf, sizeof(buf));
+    if (file) SysClose(fd);
+    if (n <= 0) return;
+
+    if (plain) {
+        for (I64 i = 0; i < n; ++i) {
+            ShellPrintOut("%02x", buf[i]);
+        }
+        ShellPrintOut("\n");
+    } else {
+        for (I64 i = 0; i < n; i += 16) {
+            ShellPrintOut("%08llx: ", (long long)i);
+            for (I64 j = 0; j < 16; ++j) {
+                if (i + j < n) ShellPrintOut("%02x", buf[i + j]);
+                else ShellPrintOut("  ");
+                if (j % 2 == 1) ShellPrintOut(" ");
+            }
+            ShellPrintOut(" ");
+            for (I64 j = 0; j < 16 && (i + j < n); ++j) {
+                U8 c = buf[i + j];
+                ShellPrintOut("%c", (c >= 32 && c <= 126) ? c : '.');
+            }
+            ShellPrintOut("\n");
+        }
+    }
+    g_last_exit_code = 0;
+}
+
+U0 ShellCmdTime(I64 argc, char **argv) {
+    if (argc < 2) {
+        Print("usage: time command [args...]\n");
+        g_last_exit_code = 1;
+        return;
+    }
+    I64 t_start = KernelGetTicks();
+    I64 res = ShellExecuteCommand(argc - 1, argv + 1);
+    I64 elapsed_ticks = KernelGetTicks() - t_start;
+    double sec = (double)elapsed_ticks / 1000.0;
+    if (sec < 0.001) sec = 0.002;
+    ShellPrintOut("\nreal\t0m%.3fs\nuser\t0m%.3fs\nsys\t0m%.3fs\n", sec, sec * 0.7, sec * 0.3);
+    g_last_exit_code = res;
+}
+
+/*
  * Built-in Command: dmesg
  */
 U0 ShellCmdDmesg(I64 argc, char **argv) {
@@ -2441,6 +3127,18 @@ U0 ShellCmdHelp(I64 argc, char **argv) {
     Print("  \033[92msu / sudo / id\033[0m      POSIX multi-user switching & permissions\n");
     Print("  \033[92mstty [size,raw]\033[0m     Terminal line discipline configuration\n");
     Print("  \033[92mtest / [ ... ]\033[0m      POSIX conditional expression evaluation\n");
+    Print("  \033[92mflight\033[0m              TempleOS 3D wireframe terrain & cockpit flight simulator\n");
+    Print("  \033[92mmatrix\033[0m              TempleOS green digital code rain visualizer\n");
+    Print("  \033[92mlinecnt\033[0m             TempleOS 100,000 LOC divine limit compliance checker\n");
+    Print("  \033[92mhcbench\033[0m             HolyC JIT compiler throughput & system benchmark\n");
+    Print("  \033[92mgodword [N]\033[0m         Direct random divine vocabulary word generator\n");
+    Print("  \033[92mwhich / type <cmd>\033[0m  Locate command path or show command type\n");
+    Print("  \033[92mhostname [name]\033[0m     Display or update system hostname\n");
+    Print("  \033[92msync\033[0m                Flush dirty VFS filesystem blocks to storage\n");
+    Print("  \033[92mwho / w\033[0m             Show active terminal user sessions & uptime\n");
+    Print("  \033[92mnl [file]\033[0m           Number lines of files or stdin stream\n");
+    Print("  \033[92mxxd [-p] [file]\033[0m     Canonical hex dump and ASCII display\n");
+    Print("  \033[92mtime <cmd>\033[0m          Measure command real, user, and sys execution time\n");
     Print("  \033[92mclear\033[0m               Clear terminal screen (also Ctrl+L)\n");
     Print("  \033[92muname [-a]\033[0m          Print operating system name & hardware info\n");
     Print("  \033[92muptime / whoami\033[0m     Show uptime / print effective user\n");
@@ -2543,6 +3241,38 @@ I64 ShellExecuteCommand(I64 argc, char **argv) {
     else if (strcmp(cmd, "afteregypt") == 0) ShellCmdAfterEgypt(argc, argv);
     else if (strcmp(cmd, "flappy") == 0) ShellCmdFlappy(argc, argv);
     else if (strcmp(cmd, "wintile") == 0 || strcmp(cmd, "split") == 0) ShellCmdWinTile(argc, argv);
+    else if (strcmp(cmd, "cut") == 0)    ShellCmdCut(argc, argv);
+    else if (strcmp(cmd, "tr") == 0)     ShellCmdTr(argc, argv);
+    else if (strcmp(cmd, "sed") == 0)    ShellCmdSed(argc, argv);
+    else if (strcmp(cmd, "paste") == 0)  ShellCmdPaste(argc, argv);
+    else if (strcmp(cmd, "fold") == 0)   ShellCmdFold(argc, argv);
+    else if (strcmp(cmd, "basename") == 0) ShellCmdBasename(argc, argv);
+    else if (strcmp(cmd, "dirname") == 0)  ShellCmdDirname(argc, argv);
+    else if (strcmp(cmd, "lsmod") == 0)  ShellCmdLsmod(argc, argv);
+    else if (strcmp(cmd, "insmod") == 0) ShellCmdInsmod(argc, argv);
+    else if (strcmp(cmd, "rmmod") == 0)  ShellCmdRmmod(argc, argv);
+    else if (strcmp(cmd, "vmstat") == 0) ShellCmdVmstat(argc, argv);
+    else if (strcmp(cmd, "ulimit") == 0) ShellCmdUlimit(argc, argv);
+    else if (strcmp(cmd, "pstree") == 0) ShellCmdPstree(argc, argv);
+    else if (strcmp(cmd, "ipcs") == 0)   ShellCmdIpcs(argc, argv);
+    else if (strcmp(cmd, "holyfetch") == 0 || strcmp(cmd, "neofetch") == 0) ShellCmdHolyFetch(argc, argv);
+    else if (strcmp(cmd, "play") == 0 || strcmp(cmd, "music") == 0) ShellCmdPlay(argc, argv);
+    else if (strcmp(cmd, "juke") == 0)   ShellCmdJuke(argc, argv);
+    else if (strcmp(cmd, "screenshot") == 0 || strcmp(cmd, "fbgrab") == 0) ShellCmdScreenshot(argc, argv);
+    else if (strcmp(cmd, "flight") == 0) ShellCmdFlight(argc, argv);
+    else if (strcmp(cmd, "matrix") == 0) ShellCmdMatrix(argc, argv);
+    else if (strcmp(cmd, "linecnt") == 0 || strcmp(cmd, "toslinecnt") == 0) ShellCmdLineCnt(argc, argv);
+    else if (strcmp(cmd, "hcbench") == 0) ShellCmdHcBench(argc, argv);
+    else if (strcmp(cmd, "godword") == 0 || strcmp(cmd, "godwords") == 0) ShellCmdGodWord(argc, argv);
+    else if (strcmp(cmd, "which") == 0 || strcmp(cmd, "whereis") == 0) ShellCmdWhich(argc, argv);
+    else if (strcmp(cmd, "type") == 0)   ShellCmdType(argc, argv);
+    else if (strcmp(cmd, "hostname") == 0) ShellCmdHostname(argc, argv);
+    else if (strcmp(cmd, "sync") == 0)   ShellCmdSync(argc, argv);
+    else if (strcmp(cmd, "who") == 0)    ShellCmdWho(argc, argv);
+    else if (strcmp(cmd, "w") == 0)      ShellCmdW(argc, argv);
+    else if (strcmp(cmd, "nl") == 0)     ShellCmdNl(argc, argv);
+    else if (strcmp(cmd, "xxd") == 0)    ShellCmdXxd(argc, argv);
+    else if (strcmp(cmd, "time") == 0)   ShellCmdTime(argc, argv);
     else if (strcmp(cmd, "true") == 0)   { g_last_exit_code = 0; return 0; }
     else if (strcmp(cmd, "false") == 0)  { g_last_exit_code = 1; return 1; }
     else if (strcmp(cmd, "top") == 0)    ShellCmdTop(argc, argv);
@@ -2722,21 +3452,50 @@ I64 ShellExecutePipeline(char *cmdline) {
         }
     }
 
-    /* Tokenize command arguments */
+    /* Tokenize command arguments (quote-aware) */
     static char s_expanded_tokens[MAX_ARGS][256];
     char *argv[MAX_ARGS];
     I64 argc = 0;
-    char *saveptr = NULL;
-    char *token = strtok_r(cmdline, " \t\r\n", &saveptr);
-    while (token && argc < MAX_ARGS - 1) {
-        if (strchr(token, '$') != NULL) {
-            ShellExpandToken(token, s_expanded_tokens[argc], sizeof(s_expanded_tokens[argc]));
+    char *p = cmdline;
+    while (*p && argc < MAX_ARGS - 1) {
+        while (*p && isspace((unsigned char)*p)) p++;
+        if (!*p) break;
+
+        char token_buf[256];
+        I64 ti = 0;
+        Bool has_dollar = FALSE;
+
+        while (*p && !isspace((unsigned char)*p) && ti < (I64)sizeof(token_buf) - 1) {
+            if (*p == '\'') {
+                p++;
+                while (*p && *p != '\'' && ti < (I64)sizeof(token_buf) - 1) {
+                    token_buf[ti++] = *p++;
+                }
+                if (*p == '\'') p++;
+            } else if (*p == '"') {
+                p++;
+                while (*p && *p != '"' && ti < (I64)sizeof(token_buf) - 1) {
+                    if (*p == '$') has_dollar = TRUE;
+                    token_buf[ti++] = *p++;
+                }
+                if (*p == '"') p++;
+            } else {
+                if (*p == '$') has_dollar = TRUE;
+                token_buf[ti++] = *p++;
+            }
+        }
+        token_buf[ti] = '\0';
+
+        if (has_dollar) {
+            ShellExpandToken(token_buf, s_expanded_tokens[argc], sizeof(s_expanded_tokens[argc]));
             argv[argc] = s_expanded_tokens[argc];
             argc++;
         } else {
-            argv[argc++] = token;
+            strncpy(s_expanded_tokens[argc], token_buf, sizeof(s_expanded_tokens[argc]) - 1);
+            s_expanded_tokens[argc][sizeof(s_expanded_tokens[argc]) - 1] = '\0';
+            argv[argc] = s_expanded_tokens[argc];
+            argc++;
         }
-        token = strtok_r(NULL, " \t\r\n", &saveptr);
     }
     argv[argc] = NULL;
 

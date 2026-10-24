@@ -9,7 +9,7 @@ echo "========================================================"
 WORKSPACE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$WORKSPACE_DIR"
 
-echo -e "\n\033[96m[1/6] Cleaning and Building HolyC Toolchain & Kernel...\033[0m"
+echo -e "\n\033[96m[1/7] Cleaning and Building HolyC Toolchain & Kernel...\033[0m"
 make clean
 make all
 
